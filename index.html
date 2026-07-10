@@ -123,20 +123,25 @@
                     const unsubAuth = onAuthStateChanged(auth, user => {
                         window.firebaseUser = user;
                         if (user) {
+                            const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                            const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
+                            const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
+
                             // 監聽歷史紀錄表
-                            onSnapshot(collection(db, "records"), snap => {
+                            onSnapshot(recordsRef, snap => {
                                 const newDb = {};
                                 snap.forEach(d => newDb[d.id] = d.data());
                                 setDatabase(newDb);
-                            });
+                            }, err => console.error("Records snapshot error:", err));
+                            
                             // 監聽店長設定
-                            onSnapshot(collection(db, "settings"), snap => {
+                            onSnapshot(settingsRef, snap => {
                                 snap.forEach(d => {
                                     if (d.id === "global" && d.data().rates) {
                                         setSettings(prev => ({ ...prev, ...d.data().rates }));
                                     }
                                 });
-                            });
+                            }, err => console.error("Settings snapshot error:", err));
                         }
                     });
                 };
@@ -149,13 +154,13 @@
 
             const getCurrentShiftData = (date, shift) => {
                 if (database[date] && database[date][shift]) return database[date][shift];
-                const emptyData = { customers: 0, revenue: 0 };
-                ITEM_CONFIG.forEach(item => emptyData[item.id] = 0);
+                const emptyData = { customers: '', revenue: '' };
+                ITEM_CONFIG.forEach(item => emptyData[item.id] = '');
                 return emptyData;
             };
 
             const handleShiftChange = (shift, field, value) => {
-                const numValue = Number(value) || 0;
+                const parsedValue = value === '' ? '' : Number(value);
                 setDatabase(prev => {
                     const newDb = { ...prev };
                     if (!newDb[inputDate]) {
@@ -165,12 +170,14 @@
                             night: getCurrentShiftData('new', 'night')
                         };
                     }
-                    newDb[inputDate][shift] = { ...newDb[inputDate][shift], [field]: numValue };
+                    newDb[inputDate][shift] = { ...newDb[inputDate][shift], [field]: parsedValue };
                     
                     // 雲端同步寫入 Firebase
                     if (window.fb && window.firebaseUser) {
                         const { db, doc, setDoc } = window.fb;
-                        setDoc(doc(db, "records", inputDate), newDb[inputDate], { merge: true });
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', inputDate);
+                        setDoc(docRef, newDb[inputDate], { merge: true }).catch(e => console.error("DB Write Error:", e));
                     }
                     
                     return newDb;
@@ -178,14 +185,16 @@
             };
 
             const handleSettingChange = (itemId, field, value) => {
-                const numValue = Number(value) || 0;
+                const parsedValue = value === '' ? '' : Number(value);
                 setSettings(prev => {
-                    const newSettings = { ...prev, [itemId]: { ...prev[itemId], [field]: numValue } };
+                    const newSettings = { ...prev, [itemId]: { ...prev[itemId], [field]: parsedValue } };
                     
                     // 雲端同步店長設定
                     if (window.fb && window.firebaseUser) {
                         const { db, doc, setDoc } = window.fb;
-                        setDoc(doc(db, "settings", "global"), { rates: newSettings }, { merge: true });
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                        setDoc(docRef, { rates: newSettings }, { merge: true }).catch(e => console.error("DB Write Error:", e));
                     }
                     
                     return newSettings;
@@ -194,11 +203,13 @@
 
             const calculateTarget = (baseData, itemId) => {
                 const config = ITEM_CONFIG.find(i => i.id === itemId);
-                const baseValue = config.type === 'amount' ? baseData.revenue : baseData.customers;
-                return Math.ceil(baseValue * (settings[itemId].rate / 100)); // 改為無條件進位
+                const baseValue = config.type === 'amount' ? (Number(baseData.revenue) || 0) : (Number(baseData.customers) || 0);
+                const rate = Number(settings[itemId]?.rate) || 0;
+                return Math.ceil(baseValue * (rate / 100)); // 修正為無條件進位並避免字串計算錯誤
             };
 
-            const calcMetrics = (target, actual) => {
+            const calcMetrics = (target, actualValue) => {
+                const actual = Number(actualValue) || 0;
                 const gap = actual - target;
                 const achieveRate = target > 0 ? ((actual / target) * 100).toFixed(1) : (actual > 0 ? 100 : 0);
                 // 差異%數 (Gap %)
@@ -208,7 +219,9 @@
 
             const renderShiftTab = (shiftKey, shiftName, icon, colorClass, bgColorClass) => {
                 const data = getCurrentShiftData(inputDate, shiftKey);
-                const atv = data.customers > 0 ? Math.round(data.revenue / data.customers) : 0;
+                const customersNum = Number(data.customers) || 0;
+                const revenueNum = Number(data.revenue) || 0;
+                const atv = customersNum > 0 ? Math.round(revenueNum / customersNum) : 0;
 
                 return (
                     <div className="flex flex-col md:flex-row h-full gap-2 overflow-hidden text-sm">
@@ -228,12 +241,12 @@
                                     <div>
                                         <label className="block text-xs text-gray-600 mb-0.5">來客數</label>
                                         <input type="number" className="w-full p-1 border rounded outline-none" 
-                                            value={data.customers || ''} onChange={(e) => handleShiftChange(shiftKey, 'customers', e.target.value)} placeholder="0" />
+                                            value={data.customers !== undefined ? data.customers : ''} onChange={(e) => handleShiftChange(shiftKey, 'customers', e.target.value)} placeholder="0" />
                                     </div>
                                     <div>
                                         <label className="block text-xs text-gray-600 mb-0.5">總業績 (金額)</label>
                                         <input type="number" className="w-full p-1 border rounded outline-none" 
-                                            value={data.revenue || ''} onChange={(e) => handleShiftChange(shiftKey, 'revenue', e.target.value)} placeholder="0" />
+                                            value={data.revenue !== undefined ? data.revenue : ''} onChange={(e) => handleShiftChange(shiftKey, 'revenue', e.target.value)} placeholder="0" />
                                     </div>
                                 </div>
 
@@ -244,7 +257,7 @@
                                             <div className="flex items-center w-2/3">
                                                 <span className="text-[10px] text-gray-400 w-12 text-right mr-1">實際:</span>
                                                 <input type="number" className="w-full p-1 border border-blue-200 bg-blue-50/30 rounded outline-none" 
-                                                    value={data[item.id] || ''} onChange={(e) => handleShiftChange(shiftKey, item.id, e.target.value)} placeholder="0" />
+                                                    value={data[item.id] !== undefined ? data[item.id] : ''} onChange={(e) => handleShiftChange(shiftKey, item.id, e.target.value)} placeholder="0" />
                                             </div>
                                         </div>
                                     ))}
@@ -265,7 +278,7 @@
                             <div className="grid grid-cols-2 gap-2 mb-2 shrink-0">
                                 <div className="bg-gray-100 p-1.5 rounded text-center border">
                                     <div className="text-gray-500 text-[10px]">來客數</div>
-                                    <div className="text-base font-bold text-gray-800">{data.customers}</div>
+                                    <div className="text-base font-bold text-gray-800">{customersNum}</div>
                                 </div>
                                 <div className="bg-blue-50 p-1.5 rounded text-center border border-blue-100">
                                     <div className="text-blue-600 text-[10px]">客單價</div>
@@ -276,7 +289,7 @@
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 flex-1 content-start">
                                 {ITEM_CONFIG.map(item => {
                                     const target = calculateTarget(data, item.id);
-                                    const actual = data[item.id];
+                                    const actual = Number(data[item.id]) || 0;
                                     const { gap, achieveRate, gapRate } = calcMetrics(target, actual);
                                     const isGood = gap >= 0;
 
@@ -327,10 +340,12 @@
 
                 if (database[selectedDate]) {
                     ['morning', 'evening', 'night'].forEach(shift => {
-                        const sData = database[selectedDate][shift];
-                        summaryData.customers += sData.customers;
-                        summaryData.revenue += sData.revenue;
-                        ITEM_CONFIG.forEach(i => summaryData[i.id] += sData[i.id]);
+                        if (database[selectedDate][shift]) {
+                            const sData = database[selectedDate][shift];
+                            summaryData.customers += Number(sData.customers) || 0;
+                            summaryData.revenue += Number(sData.revenue) || 0;
+                            ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
+                        }
                     });
                     summaryData.atv = summaryData.customers > 0 ? Math.round(summaryData.revenue / summaryData.customers) : 0;
                 }
@@ -425,9 +440,9 @@
                         shiftsToProcess.forEach(shift => {
                             if (database[date][shift]) {
                                 const sData = database[date][shift];
-                                dayData.customers += sData.customers || 0;
-                                dayData.revenue += sData.revenue || 0;
-                                ITEM_CONFIG.forEach(i => dayData[i.id] += sData[i.id] || 0);
+                                dayData.customers += Number(sData.customers) || 0;
+                                dayData.revenue += Number(sData.revenue) || 0;
+                                ITEM_CONFIG.forEach(i => dayData[i.id] += Number(sData[i.id]) || 0);
                             }
                         });
                     }
@@ -621,7 +636,7 @@
                                         <td className="p-2 border">
                                             <div className="flex items-center">
                                                 <input type="number" className="p-1 border rounded w-20 text-center" 
-                                                    value={settings[item.id].rate} 
+                                                    value={settings[item.id]?.rate !== undefined ? settings[item.id].rate : ''} 
                                                     onChange={(e) => handleSettingChange(item.id, 'rate', e.target.value)} />
                                                 <span className="ml-1 text-gray-500">%</span>
                                             </div>
@@ -629,7 +644,7 @@
                                         <td className="p-2 border">
                                             <div className="flex items-center">
                                                 <input type="number" className="p-1 border rounded w-20 text-center" 
-                                                    value={settings[item.id].score} 
+                                                    value={settings[item.id]?.score !== undefined ? settings[item.id].score : ''} 
                                                     onChange={(e) => handleSettingChange(item.id, 'score', e.target.value)} />
                                                 <span className="ml-1 text-gray-500">分</span>
                                             </div>
