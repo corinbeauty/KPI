@@ -335,7 +335,7 @@
             };
 
             // 新增狀態來控制「三班累加」頁面的時間範圍
-            const [summaryRange, setSummaryRange] = useState('single'); // 'single', 'currentMonth', 'lastMonth'
+            const [summaryRange, setSummaryRange] = useState('currentMonth'); // 'single', 'currentMonth', 'lastMonth'
 
             const renderSummary = () => {
                 const summaryData = { customers: 0, revenue: 0, atv: 0 };
