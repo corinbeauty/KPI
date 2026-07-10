@@ -477,6 +477,7 @@
                 ITEM_CONFIG.forEach(i => currentCumulative[i.id] = 0);
 
                 sortedDates.forEach(date => {
+                    let hasData = false;
                     const dayData = { customers: 0, revenue: 0 };
                     ITEM_CONFIG.forEach(i => dayData[i.id] = 0);
                     
@@ -486,6 +487,12 @@
                         shiftsToProcess.forEach(shift => {
                             if (database[date][shift]) {
                                 const sData = database[date][shift];
+                                // 檢查是否真的有輸入數字 (不是空字串)
+                                const values = [sData.customers, sData.revenue, ...ITEM_CONFIG.map(i => sData[i.id])];
+                                if (values.some(v => v !== '' && v !== undefined && v !== null)) {
+                                    hasData = true;
+                                }
+
                                 dayData.customers += Number(sData.customers) || 0;
                                 dayData.revenue += Number(sData.revenue) || 0;
                                 ITEM_CONFIG.forEach(i => dayData[i.id] += Number(sData[i.id]) || 0);
@@ -493,19 +500,24 @@
                         });
                     }
 
-                    trendData.dailyTotals[date] = dayData;
-                    currentCumulative.customers += dayData.customers;
-                    currentCumulative.revenue += dayData.revenue;
-                    ITEM_CONFIG.forEach(i => currentCumulative[i.id] += dayData[i.id]);
+                    // 若沒有數據，則標記為 null 以便前端顯示空值
+                    trendData.dailyTotals[date] = hasData ? dayData : null;
+                    
+                    // 累計值只在有數據時往上疊加，但每一天都保有最新的累計紀錄
+                    if (hasData) {
+                        currentCumulative.customers += dayData.customers;
+                        currentCumulative.revenue += dayData.revenue;
+                        ITEM_CONFIG.forEach(i => currentCumulative[i.id] += dayData[i.id]);
+                    }
                     trendData.cumulative[date] = { ...currentCumulative };
                 });
 
                 ITEM_CONFIG.forEach(item => {
                     if(item.id === visibleChart) {
-                        // 若無資料，預設為 0
-                        const dataPoints = sortedDates.map(date => trendData.dailyTotals[date][item.id] || 0);
+                        // 若無資料回傳 null，圖表就不會畫到 0
+                        const dataPoints = sortedDates.map(date => trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : null);
                         trendData.chartDatasets.push({
-                            label: item.name, data: dataPoints, borderColor: item.color, backgroundColor: item.color, tension: 0.3, fill: false, borderWidth: 2, pointRadius: 2
+                            label: item.name, data: dataPoints, borderColor: item.color, backgroundColor: item.color, tension: 0.3, fill: false, borderWidth: 2, pointRadius: 2, spanGaps: true
                         });
                     }
                 });
@@ -627,12 +639,16 @@
                                         <tbody>
                                             <tr>
                                                 <td className="p-0.5 bg-gray-50 font-bold border sticky left-0 z-10 text-left pl-1">來客數</td>
-                                                {dates.map(date => <td key={`cust-${date}`} className="p-0.5 border text-gray-700">{trendData.dailyTotals[date].customers || 0}</td>)}
+                                                {dates.map(date => <td key={`cust-${date}`} className="p-0.5 border text-gray-700">
+                                                    {trendData.dailyTotals[date] ? trendData.dailyTotals[date].customers : ''}
+                                                </td>)}
                                             </tr>
                                             {ITEM_CONFIG.map(item => (
                                                 <tr key={`row-${item.id}`}>
                                                     <td className="p-0.5 bg-white font-semibold border sticky left-0 z-10 text-left pl-1" style={{color: item.color}}>{item.name}</td>
-                                                    {dates.map(date => <td key={`${item.id}-${date}`} className="p-0.5 border text-gray-700">{trendData.dailyTotals[date][item.id] || 0}</td>)}
+                                                    {dates.map(date => <td key={`${item.id}-${date}`} className="p-0.5 border text-gray-700">
+                                                        {trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : ''}
+                                                    </td>)}
                                                 </tr>
                                             ))}
                                         </tbody>
