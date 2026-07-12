@@ -92,7 +92,7 @@
         ];
 
         function App() {
-            const [activeTab, setActiveTab] = useState('morning');
+            const [activeTab, setActiveTab] = useState('night');
             
             const todayStr = '2026-07-11';
             const [selectedDate, setSelectedDate] = useState(todayStr); 
@@ -163,13 +163,22 @@
                 const parsedValue = value === '' ? '' : Number(value);
                 setDatabase(prev => {
                     const newDb = { ...prev };
+                    
+                    // 若當日結構不存在，建立結構 (包含 manager)
                     if (!newDb[inputDate]) {
                         newDb[inputDate] = {
                             morning: getCurrentShiftData('new', 'morning'),
                             evening: getCurrentShiftData('new', 'evening'),
-                            night: getCurrentShiftData('new', 'night')
+                            night: getCurrentShiftData('new', 'night'),
+                            manager: getCurrentShiftData('new', 'manager')
                         };
                     }
+                    
+                    // 若舊資料沒有 manager 節點，補齊它
+                    if (!newDb[inputDate].manager) {
+                        newDb[inputDate].manager = getCurrentShiftData('new', 'manager');
+                    }
+                    
                     newDb[inputDate][shift] = { ...newDb[inputDate][shift], [field]: parsedValue };
                     
                     // 雲端同步寫入 Firebase
@@ -465,6 +474,96 @@
                 );
             };
 
+            const renderAudit = () => {
+                const auditItems = [
+                    { id: 'customers', name: '總來客數', isAmount: false },
+                    { id: 'revenue', name: '總業績', isAmount: true },
+                    ...ITEM_CONFIG.map(i => ({ id: i.id, name: i.name, isAmount: i.type === 'amount' }))
+                ];
+
+                const dayData = database[inputDate] || {};
+                const managerData = dayData.manager || {};
+
+                const getSystemSum = (fieldId) => {
+                    return ['morning', 'evening', 'night'].reduce((acc, shift) => {
+                        return acc + (Number(dayData[shift]?.[fieldId]) || 0);
+                    }, 0);
+                };
+
+                return (
+                    <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <h2 className="text-lg font-bold text-red-700"><i className="fa-solid fa-clipboard-check mr-2"></i>店長日結稽核</h2>
+                            <div className="flex items-center">
+                                <label className="text-gray-600 mr-1 font-semibold text-xs">稽核日期:</label>
+                                <input type="date" value={inputDate} onChange={(e) => setInputDate(e.target.value)} 
+                                    className="p-0.5 border rounded shadow-sm outline-none text-xs text-red-800 font-bold" />
+                            </div>
+                        </div>
+                        
+                        <p className="text-xs text-gray-500 mb-4 bg-red-50 p-2 rounded border border-red-100">
+                            <i className="fa-solid fa-circle-info mr-1"></i>
+                            請於此處填入「今日整天真實結帳資料」。系統會自動比對各班輸入的總和，若「誤差」欄位出現非 0 的紅字，代表三班人員輸入的數字有誤或漏 KEY。
+                        </p>
+
+                        <div className="overflow-x-auto hide-scroll">
+                            <table className="w-full text-sm border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-100 text-gray-700">
+                                        <th className="p-2 border text-left w-1/4">稽核項目</th>
+                                        <th className="p-2 border text-right w-1/4">三班系統加總 <span className="text-[10px] font-normal block text-gray-500">(自動計算)</span></th>
+                                        <th className="p-2 border text-center w-1/4 bg-red-50 text-red-700">店長實際日結 <span className="text-[10px] font-normal block">(請輸入)</span></th>
+                                        <th className="p-2 border text-right w-1/4">整天差異數 <span className="text-[10px] font-normal block text-gray-500">(實際 - 系統)</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {auditItems.map(item => {
+                                        const sysSum = getSystemSum(item.id);
+                                        const managerVal = managerData[item.id];
+                                        const hasInput = managerVal !== undefined && managerVal !== '';
+                                        const managerNum = Number(managerVal) || 0;
+                                        
+                                        // 計算誤差: 店長輸入 - 系統加總
+                                        const diff = hasInput ? managerNum - sysSum : null;
+                                        let diffDisplay = '-';
+                                        let diffColor = 'text-gray-300';
+                                        
+                                        if (hasInput) {
+                                            if (diff === 0) {
+                                                diffDisplay = '0 (相符)';
+                                                diffColor = 'text-green-600 bg-green-50';
+                                            } else {
+                                                diffDisplay = diff > 0 ? `+${diff}` : diff;
+                                                diffColor = 'text-red-600 bg-red-50 font-bold';
+                                            }
+                                        }
+
+                                        return (
+                                            <tr key={item.id} className="border-b hover:bg-gray-50">
+                                                <td className="p-2 font-bold text-gray-700">{item.name}</td>
+                                                <td className="p-2 text-right text-gray-500 bg-gray-50">
+                                                    {item.isAmount ? '$' : ''}{sysSum.toLocaleString()}
+                                                </td>
+                                                <td className="p-1 text-center bg-red-50/30">
+                                                    <input type="number" 
+                                                        className="w-full max-w-[100px] p-1.5 border border-red-300 rounded text-right text-sm text-red-800 font-bold bg-white focus:ring-2 focus:ring-red-200 outline-none" 
+                                                        value={managerVal !== undefined ? managerVal : ''} 
+                                                        onChange={(e) => handleShiftChange('manager', item.id, e.target.value)} 
+                                                        placeholder="請輸入..." />
+                                                </td>
+                                                <td className={`p-2 text-right ${diffColor}`}>
+                                                    {item.isAmount && hasInput && diff !== 0 ? '$' : ''}{hasInput && diff !== 0 ? diff.toLocaleString() : diffDisplay}
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            };
+
             const chartRef = useRef(null);
             
             const getMonthlyTrendData = () => {
@@ -729,17 +828,20 @@
                     </header>
 
                     <nav className="flex overflow-x-auto border-b bg-white shrink-0 hide-scroll text-sm">
+                        <button onClick={() => setActiveTab('night')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'night' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-moon mr-1 text-gray-700"></i>夜班
+                        </button>
                         <button onClick={() => setActiveTab('morning')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'morning' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fa-solid fa-sun mr-1 text-orange-500"></i>早班
                         </button>
                         <button onClick={() => setActiveTab('evening')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'evening' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fa-solid fa-cloud-sun mr-1 text-indigo-500"></i>晚班
                         </button>
-                        <button onClick={() => setActiveTab('night')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'night' ? 'tab-active' : 'tab-inactive'}`}>
-                            <i className="fa-solid fa-moon mr-1 text-gray-700"></i>夜班
-                        </button>
                         <button onClick={() => setActiveTab('summary')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'summary' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fa-solid fa-layer-group mr-1 text-green-600"></i>三班累加
+                        </button>
+                        <button onClick={() => setActiveTab('audit')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'audit' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-clipboard-check mr-1 text-red-600"></i>稽核
                         </button>
                         <button onClick={() => setActiveTab('trend')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'trend' ? 'tab-active' : 'tab-inactive'}`}>
                             <i className="fa-solid fa-chart-line mr-1 text-purple-600"></i>趨勢圖表
@@ -750,10 +852,11 @@
                     </nav>
 
                     <main className="flex-1 overflow-hidden p-2">
+                        {activeTab === 'night' && renderShiftTab('night', '夜班', 'fa-moon', 'text-gray-800', 'bg-gray-800')}
                         {activeTab === 'morning' && renderShiftTab('morning', '早班', 'fa-sun', 'text-orange-600', 'bg-orange-500')}
                         {activeTab === 'evening' && renderShiftTab('evening', '晚班', 'fa-cloud-sun', 'text-indigo-600', 'bg-indigo-500')}
-                        {activeTab === 'night' && renderShiftTab('night', '夜班', 'fa-moon', 'text-gray-800', 'bg-gray-800')}
                         {activeTab === 'summary' && renderSummary()}
+                        {activeTab === 'audit' && renderAudit()}
                         {activeTab === 'trend' && renderTrendTab()}
                         {activeTab === 'settings' && renderSettings()}
                     </main>
