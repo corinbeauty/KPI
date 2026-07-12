@@ -52,7 +52,7 @@
         .tab-active { border-bottom: 2px solid #3b82f6; color: #1d4ed8; font-weight: bold; background-color: #eff6ff;}
         .tab-inactive { color: #64748b; }
         .tab-inactive:hover { background-color: #e2e8f0; color: #334155; }
-        input[type="number"], input[type="date"] { text-align: right; }
+        input[type="number"], input[type="date"], input[type="month"] { text-align: right; }
         
         /* 隱藏數字輸入框的上下調整鍵 */
         input[type="number"]::-webkit-outer-spin-button,
@@ -92,6 +92,7 @@
         ];
 
         function App() {
+            // 預設開啟夜班
             const [activeTab, setActiveTab] = useState('night');
             
             const todayStr = '2026-07-11';
@@ -104,6 +105,7 @@
             
             // 折線圖顯示項目的單選控制
             const [visibleChart, setVisibleChart] = useState(ITEM_CONFIG[0].id);
+            const chartRef = useRef(null);
 
             // 店長設定狀態 (包含目標%與分數)
             const [settings, setSettings] = useState(
@@ -164,7 +166,6 @@
                 setDatabase(prev => {
                     const newDb = { ...prev };
                     
-                    // 若當日結構不存在，建立結構 (包含 manager)
                     if (!newDb[inputDate]) {
                         newDb[inputDate] = {
                             morning: getCurrentShiftData('new', 'morning'),
@@ -174,14 +175,12 @@
                         };
                     }
                     
-                    // 若舊資料沒有 manager 節點，補齊它
                     if (!newDb[inputDate].manager) {
                         newDb[inputDate].manager = getCurrentShiftData('new', 'manager');
                     }
                     
                     newDb[inputDate][shift] = { ...newDb[inputDate][shift], [field]: parsedValue };
                     
-                    // 雲端同步寫入 Firebase
                     if (window.fb && window.firebaseUser) {
                         const { db, doc, setDoc } = window.fb;
                         const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
@@ -198,7 +197,6 @@
                 setSettings(prev => {
                     const newSettings = { ...prev, [itemId]: { ...prev[itemId], [field]: parsedValue } };
                     
-                    // 雲端同步店長設定
                     if (window.fb && window.firebaseUser) {
                         const { db, doc, setDoc } = window.fb;
                         const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
@@ -214,18 +212,18 @@
                 const config = ITEM_CONFIG.find(i => i.id === itemId);
                 const baseValue = config.type === 'amount' ? (Number(baseData.revenue) || 0) : (Number(baseData.customers) || 0);
                 const rate = Number(settings[itemId]?.rate) || 0;
-                return Math.ceil(baseValue * (rate / 100)); // 修正為無條件進位並避免字串計算錯誤
+                return Math.ceil(baseValue * (rate / 100));
             };
 
             const calcMetrics = (target, actualValue) => {
                 const actual = Number(actualValue) || 0;
                 const gap = actual - target;
-                const achieveRate = target > 0 ? ((actual / target) * 100).toFixed(1) : (actual > 0 ? 100 : 0);
-                // 差異%數 (Gap %)
-                const gapRate = target > 0 ? ((gap / target) * 100).toFixed(1) : 0;
+                const achieveRate = target > 0 ? Math.round((actual / target) * 100) : (actual > 0 ? 100 : 0);
+                const gapRate = target > 0 ? Math.round((gap / target) * 100) : 0;
                 return { gap, achieveRate, gapRate };
             };
 
+            // 1. 班別戰報
             const renderShiftTab = (shiftKey, shiftName, icon, colorClass, bgColorClass) => {
                 const data = getCurrentShiftData(inputDate, shiftKey);
                 const customersNum = Number(data.customers) || 0;
@@ -234,7 +232,6 @@
 
                 return (
                     <div className="flex flex-col md:flex-row h-full gap-2 overflow-hidden text-sm">
-                        {/* 左側：數據輸入區 */}
                         <div className="w-full md:w-1/2 flex flex-col gap-1.5">
                             <div className="bg-white p-1.5 rounded shadow-sm border border-gray-200 flex justify-between items-center shrink-0">
                                 <h2 className={`text-base font-bold ${colorClass}`}><i className={`fa-solid ${icon} mr-1`}></i>{shiftName} 數據輸入</h2>
@@ -274,7 +271,6 @@
                             </div>
                         </div>
 
-                        {/* 右側：視覺化截圖戰報 */}
                         <div className="w-full md:w-1/2 screenshot-area bg-white p-2 rounded shadow-md border border-gray-300 flex flex-col overflow-y-auto hide-scroll">
                             <div className="text-center mb-1.5 shrink-0">
                                 <h2 className="text-lg font-black text-gray-800 tracking-wider">
@@ -343,24 +339,12 @@
                 );
             };
 
-            // 新增狀態來控制「三班累加」頁面的時間範圍
-            const [summaryRange, setSummaryRange] = useState('currentMonth'); // 'single', 'currentMonth', 'lastMonth'
+            // 2. 三班累加結算
+            const [summaryRange, setSummaryRange] = useState('currentMonth');
 
             const renderSummary = () => {
                 const summaryData = { customers: 0, revenue: 0, atv: 0 };
                 ITEM_CONFIG.forEach(i => summaryData[i.id] = 0);
-                
-                // 用於存放各班的獨立累計數據 (排名用)
-                const shiftBreakdown = {
-                    morning: { customers: 0, revenue: 0 },
-                    evening: { customers: 0, revenue: 0 },
-                    night: { customers: 0, revenue: 0 }
-                };
-                ITEM_CONFIG.forEach(i => {
-                    shiftBreakdown.morning[i.id] = 0;
-                    shiftBreakdown.evening[i.id] = 0;
-                    shiftBreakdown.night[i.id] = 0;
-                });
 
                 let displayTitle = "三班數據累加結算";
 
@@ -372,19 +356,12 @@
                                 const sData = database[selectedDate][shift];
                                 summaryData.customers += Number(sData.customers) || 0;
                                 summaryData.revenue += Number(sData.revenue) || 0;
-                                shiftBreakdown[shift].customers += Number(sData.customers) || 0;
-                                shiftBreakdown[shift].revenue += Number(sData.revenue) || 0;
-                                
-                                ITEM_CONFIG.forEach(i => {
-                                    const val = Number(sData[i.id]) || 0;
-                                    summaryData[i.id] += val;
-                                    shiftBreakdown[shift][i.id] += val;
-                                });
+                                ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
                             }
                         });
                     }
                 } else {
-                    const today = new Date('2026-07-11'); // 使用模擬的今天日期
+                    const today = new Date('2026-07-11');
                     let targetMonth, targetYear;
                     
                     if (summaryRange === 'currentMonth') {
@@ -399,7 +376,6 @@
 
                     const monthPrefix = `${targetYear}-${targetMonth.toString().padStart(2, '0')}`;
 
-                    // 遍歷資料庫尋找符合該月份的資料
                     Object.keys(database).forEach(dateKey => {
                         if (dateKey.startsWith(monthPrefix)) {
                             ['morning', 'evening', 'night'].forEach(shift => {
@@ -407,14 +383,7 @@
                                     const sData = database[dateKey][shift];
                                     summaryData.customers += Number(sData.customers) || 0;
                                     summaryData.revenue += Number(sData.revenue) || 0;
-                                    shiftBreakdown[shift].customers += Number(sData.customers) || 0;
-                                    shiftBreakdown[shift].revenue += Number(sData.revenue) || 0;
-                                    
-                                    ITEM_CONFIG.forEach(i => {
-                                        const val = Number(sData[i.id]) || 0;
-                                        summaryData[i.id] += val;
-                                        shiftBreakdown[shift][i.id] += val;
-                                    });
+                                    ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
                                 }
                             });
                         }
@@ -422,51 +391,6 @@
                 }
                 
                 summaryData.atv = summaryData.customers > 0 ? Math.round(summaryData.revenue / summaryData.customers) : 0;
-                
-                // 產生排名的 Helper Function
-                const renderRankings = (itemId) => {
-                    const data = [
-                        { shift: '早', val: shiftBreakdown.morning[itemId] || 0, color: 'text-orange-600', bg: 'bg-orange-100', border: 'border-orange-200' },
-                        { shift: '晚', val: shiftBreakdown.evening[itemId] || 0, color: 'text-indigo-600', bg: 'bg-indigo-100', border: 'border-indigo-200' },
-                        { shift: '夜', val: shiftBreakdown.night[itemId] || 0, color: 'text-gray-800', bg: 'bg-gray-200', border: 'border-gray-300' }
-                    ];
-                    
-                    // 降冪排序，如果數值為 0 則排在後面
-                    data.sort((a, b) => b.val - a.val);
-                    
-                    // 處理同燈同分與 0 分不排名
-                    let currentRank = 1;
-                    for (let i = 0; i < data.length; i++) {
-                        if (i > 0 && data[i].val < data[i-1].val) {
-                            currentRank = i + 1;
-                        }
-                        data[i].rank = data[i].val === 0 ? '-' : currentRank;
-                    }
-
-                    return (
-                        <div className="flex flex-col gap-1 mt-1 pl-2 border-l-2 border-gray-200">
-                            {data.map((d, i) => (
-                                <div key={i} className="flex justify-between items-center text-[10px]">
-                                    <div className="flex items-center gap-1.5">
-                                        {/* 排名圖示 */}
-                                        {d.rank === 1 ? (
-                                            <span className="text-yellow-500 w-3 text-center"><i className="fa-solid fa-crown"></i></span>
-                                        ) : d.rank === 2 ? (
-                                            <span className="text-gray-400 w-3 text-center"><i className="fa-solid fa-medal"></i></span>
-                                        ) : d.rank === 3 ? (
-                                            <span className="text-amber-700 w-3 text-center"><i className="fa-solid fa-award"></i></span>
-                                        ) : (
-                                            <span className="text-gray-300 w-3 text-center text-[8px]"><i className="fa-solid fa-minus"></i></span>
-                                        )}
-                                        <span className={`px-1 rounded border ${d.bg} ${d.border} ${d.color} font-bold leading-none py-0.5`}>{d.shift}</span>
-                                    </div>
-                                    <span className="font-bold text-gray-700">{d.val}</span>
-                                </div>
-                            ))}
-                        </div>
-                    );
-                };
-
 
                 return (
                     <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
@@ -507,7 +431,7 @@
                                 <tr className="bg-gray-800 text-white">
                                     <th className="p-2 rounded-tl">評估項目</th>
                                     <th className="p-2 text-right">目標</th>
-                                    <th className="p-2 text-right min-w-[80px]">實際總和<br/><span className="text-[9px] text-gray-300 font-normal">及各班貢獻排名</span></th>
+                                    <th className="p-2 text-right">實際總和</th>
                                     <th className="p-2 text-right">差異數</th>
                                     <th className="p-2 text-right">達成率</th>
                                     <th className="p-2 text-right rounded-tr">差異率</th>
@@ -522,22 +446,18 @@
                                     
                                     return (
                                         <tr key={`sum-${item.id}`} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                                            <td className="p-2 border-b font-semibold border-l align-top">{item.name}</td>
-                                            <td className="p-2 border-b text-right text-gray-600 align-top">{target}</td>
-                                            <td className="p-2 border-b align-top">
-                                                <div className="text-right font-bold text-blue-600 mb-1">{actual}</div>
-                                                {/* 只在本月或上月累計時顯示排名 */}
-                                                {(summaryRange === 'currentMonth' || summaryRange === 'lastMonth') && renderRankings(item.id)}
-                                            </td>
-                                            <td className={`p-2 border-b text-right font-bold align-top ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                            <td className="p-2 border-b font-semibold border-l">{item.name}</td>
+                                            <td className="p-2 border-b text-right text-gray-600">{target}</td>
+                                            <td className="p-2 border-b text-right font-bold text-blue-600">{actual}</td>
+                                            <td className={`p-2 border-b text-right font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>
                                                 {gap > 0 ? `+${gap}` : gap}
                                             </td>
-                                            <td className="p-2 border-b text-right align-top">
+                                            <td className="p-2 border-b text-right">
                                                 <span className={`px-1 rounded text-xs font-bold ${isGood ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                                     {achieveRate}%
                                                 </span>
                                             </td>
-                                            <td className={`p-2 border-b text-right font-bold text-xs border-r align-top ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                            <td className={`p-2 border-b text-right font-bold text-xs border-r ${isGood ? 'text-green-600' : 'text-red-500'}`}>
                                                 {gapRate > 0 ? `+${gapRate}%` : `${gapRate}%`}
                                             </td>
                                         </tr>
@@ -549,6 +469,7 @@
                 );
             };
 
+            // 3. 店長稽核
             const renderAudit = () => {
                 const auditItems = [
                     { id: 'customers', name: '總來客數', isAmount: false },
@@ -598,7 +519,6 @@
                                         const hasInput = managerVal !== undefined && managerVal !== '';
                                         const managerNum = Number(managerVal) || 0;
                                         
-                                        // 計算誤差: 店長輸入 - 系統加總
                                         const diff = hasInput ? managerNum - sysSum : null;
                                         let diffDisplay = '-';
                                         let diffColor = 'text-gray-300';
@@ -639,16 +559,24 @@
                 );
             };
 
-            const chartRef = useRef(null);
-            
+            // 4. 趨勢圖表與排名
             const getMonthlyTrendData = () => {
-                const monthPrefix = inputDate.substring(0, 7); // e.g. '2026-07'
+                const monthPrefix = inputDate.substring(0, 7); 
                 const daysInMonth = new Date(parseInt(monthPrefix.split('-')[0]), parseInt(monthPrefix.split('-')[1]), 0).getDate();
                 const sortedDates = Array.from({length: daysInMonth}, (_, i) => `${monthPrefix}-${(i+1).toString().padStart(2, '0')}`);
                 
-                const trendData = { dates: sortedDates, dailyTotals: {}, cumulative: {}, chartDatasets: [] };
+                const trendData = { dates: sortedDates, dailyTotals: {}, cumulative: {}, shiftBreakdown: {}, chartDatasets: [] };
+                
+                // 初始化累計容器
                 const currentCumulative = { customers: 0, revenue: 0 };
-                ITEM_CONFIG.forEach(i => currentCumulative[i.id] = 0);
+                const currentShiftBreakdown = { morning: {}, evening: {}, night: {} };
+                
+                ITEM_CONFIG.forEach(i => {
+                    currentCumulative[i.id] = 0;
+                    currentShiftBreakdown.morning[i.id] = 0;
+                    currentShiftBreakdown.evening[i.id] = 0;
+                    currentShiftBreakdown.night[i.id] = 0;
+                });
 
                 sortedDates.forEach(date => {
                     let hasData = false;
@@ -658,37 +586,46 @@
                     const shiftsToProcess = trendFilter === 'all' ? ['morning', 'evening', 'night'] : [trendFilter];
 
                     if (database[date]) {
+                        // 計算畫圖與總和用的數據 (依照 filter)
                         shiftsToProcess.forEach(shift => {
                             if (database[date][shift]) {
                                 const sData = database[date][shift];
-                                // 檢查是否真的有輸入數字 (不是空字串)
                                 const values = [sData.customers, sData.revenue, ...ITEM_CONFIG.map(i => sData[i.id])];
                                 if (values.some(v => v !== '' && v !== undefined && v !== null)) {
                                     hasData = true;
                                 }
-
                                 dayData.customers += Number(sData.customers) || 0;
                                 dayData.revenue += Number(sData.revenue) || 0;
                                 ITEM_CONFIG.forEach(i => dayData[i.id] += Number(sData[i.id]) || 0);
                             }
                         });
+                        
+                        // 計算三班細項排名用的數據 (永遠抓取 all)
+                        ['morning', 'evening', 'night'].forEach(shift => {
+                            if (database[date][shift]) {
+                                const sData = database[date][shift];
+                                ITEM_CONFIG.forEach(i => {
+                                    currentShiftBreakdown[shift][i.id] += Number(sData[i.id]) || 0;
+                                });
+                            }
+                        });
                     }
 
-                    // 若沒有數據，則標記為 null 以便前端顯示空值
                     trendData.dailyTotals[date] = hasData ? dayData : null;
                     
-                    // 累計值只在有數據時往上疊加，但每一天都保有最新的累計紀錄
                     if (hasData) {
                         currentCumulative.customers += dayData.customers;
                         currentCumulative.revenue += dayData.revenue;
                         ITEM_CONFIG.forEach(i => currentCumulative[i.id] += dayData[i.id]);
                     }
-                    trendData.cumulative[date] = { ...currentCumulative };
+                    
+                    // 為了方便，把目前的狀態深拷貝存入該日期的紀錄中
+                    trendData.cumulative[date] = JSON.parse(JSON.stringify(currentCumulative));
+                    trendData.shiftBreakdown[date] = JSON.parse(JSON.stringify(currentShiftBreakdown));
                 });
 
                 ITEM_CONFIG.forEach(item => {
                     if(item.id === visibleChart) {
-                        // 若無資料回傳 null，圖表就不會畫到 0
                         const dataPoints = sortedDates.map(date => trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : null);
                         trendData.chartDatasets.push({
                             label: item.name, data: dataPoints, borderColor: item.color, backgroundColor: item.color, tension: 0.3, fill: false, borderWidth: 2, pointRadius: 2, spanGaps: true
@@ -698,6 +635,7 @@
                 return trendData;
             };
 
+            // 圖表渲染 useEffect
             useEffect(() => {
                 if (activeTab !== 'trend') return;
                 const trendData = getMonthlyTrendData();
@@ -726,7 +664,7 @@
                                                 const dStr = `${monthPrefix}-${day.toString().padStart(2, '0')}`.replace(/-/g, '/');
                                                 const d = new Date(dStr);
                                                 const dayOfWeek = d.getDay();
-                                                if (dayOfWeek === 0 || dayOfWeek === 6) return '#ef4444'; // 紅字標示假日
+                                                if (dayOfWeek === 0 || dayOfWeek === 6) return '#ef4444';
                                             }
                                             return '#64748b';
                                         }
@@ -744,29 +682,71 @@
             const renderTrendTab = () => {
                 const trendData = getMonthlyTrendData();
                 const dates = trendData.dates;
-                const todayData = dates.find(d => d === '2026-07-11');
-                const latestCumulative = todayData ? trendData.cumulative['2026-07-11'] : null;
+                const todayData = dates.find(d => d === inputDate);
+                const latestCumulative = todayData ? trendData.cumulative[inputDate] : null;
+                const latestBreakdown = todayData ? trendData.shiftBreakdown[inputDate] : null;
+
+                // 渲染單一項目的三班排名
+                const renderRankings = (itemId) => {
+                    if (!latestBreakdown || trendFilter !== 'all') return null; 
+
+                    const rankings = [
+                        { shift: '早', val: latestBreakdown.morning[itemId] || 0, color: 'text-orange-500' },
+                        { shift: '晚', val: latestBreakdown.evening[itemId] || 0, color: 'text-blue-500' },
+                        { shift: '夜', val: latestBreakdown.night[itemId] || 0, color: 'text-gray-800' }
+                    ];
+
+                    rankings.sort((a, b) => b.val - a.val);
+
+                    let currentRank = 1;
+                    for (let i = 0; i < rankings.length; i++) {
+                        if (i > 0 && rankings[i].val < rankings[i-1].val) {
+                            currentRank = i + 1;
+                        }
+                        rankings[i].rank = rankings[i].val === 0 ? '-' : currentRank;
+                    }
+
+                    return (
+                        <div className="mt-1 pt-1 border-t border-purple-200 flex flex-col gap-[2px]">
+                            {rankings.map((d, i) => (
+                                <div key={i} className="flex justify-between items-center text-[10px] leading-none">
+                                    <span className={`${d.color} font-bold`}>{d.shift}</span>
+                                    <div className="flex items-center gap-0.5">
+                                        {d.rank === 1 ? <i className="fa-solid fa-crown text-yellow-500 text-[9px]"></i> :
+                                         d.rank === 2 ? <i className="fa-solid fa-medal text-gray-400 text-[9px]"></i> :
+                                         d.rank === 3 ? <i className="fa-solid fa-award text-amber-700 text-[9px]"></i> :
+                                         <span className="w-[9px]"></span>}
+                                        <span className="font-bold text-gray-700">{d.val}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                };
 
                 return (
                     <div className="flex flex-col h-full gap-1.5 text-sm overflow-y-auto hide-scroll pb-2">
-                        {/* 頂部控制與總結 */}
+                        {/* 頂部控制與總結 (包含排名) */}
                         <div className="bg-white p-1.5 rounded shadow border border-purple-200 shrink-0">
                             <div className="flex justify-between items-center mb-1">
                                 <h2 className="text-sm font-bold text-purple-800">
-                                    <i className="fa-solid fa-calendar-check mr-1"></i>本月累計 (至 7/11)
+                                    <i className="fa-solid fa-calendar-check mr-1"></i>本月累計 (至 {inputDate.split('-')[1]}/{inputDate.split('-')[2]})
                                 </h2>
-                                <div className="flex bg-gray-100 rounded overflow-hidden text-[10px]">
-                                    {['all', 'morning', 'evening', 'night'].map(f => (
-                                        <button key={f} onClick={() => setTrendFilter(f)} 
-                                            className={`px-2 py-0.5 ${trendFilter === f ? 'bg-purple-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>
-                                            {f === 'all' ? '全部累計' : f === 'morning' ? '早班' : f === 'evening' ? '晚班' : '夜班'}
-                                        </button>
-                                    ))}
+                                <div className="flex items-center gap-2">
+                                    <input type="month" value={inputDate.substring(0,7)} onChange={(e) => setInputDate(`${e.target.value}-01`)} className="p-0.5 border rounded text-xs bg-gray-50 outline-none" />
+                                    <div className="flex bg-gray-100 rounded overflow-hidden text-[10px]">
+                                        {['all', 'morning', 'evening', 'night'].map(f => (
+                                            <button key={f} onClick={() => setTrendFilter(f)} 
+                                                className={`px-2 py-0.5 ${trendFilter === f ? 'bg-purple-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>
+                                                {f === 'all' ? '全部累計' : f === 'morning' ? '早班' : f === 'evening' ? '晚班' : '夜班'}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                             
                             {latestCumulative && (
-                                <div className="grid grid-cols-6 gap-1">
+                                <div className="grid grid-cols-3 md:grid-cols-6 gap-1">
                                     {ITEM_CONFIG.map(item => {
                                         const totalTarget = calculateTarget(latestCumulative, item.id);
                                         const totalActual = latestCumulative[item.id];
@@ -777,10 +757,12 @@
                                             <div key={`cumul-${item.id}`} className="bg-purple-50 p-1 rounded border border-purple-100 text-center flex flex-col justify-between">
                                                 <div className="font-bold text-gray-700 text-[10px]">{item.name}</div>
                                                 <div className="text-[9px] text-gray-500">目標: {totalTarget}</div>
-                                                <div className="text-xs font-black text-purple-700">{totalActual}</div>
+                                                <div className="text-sm font-black text-purple-700">{totalActual}</div>
                                                 <div className={`text-[9px] font-bold ${isGood ? 'text-green-600' : 'text-red-500'} leading-tight scale-90`}>
-                                                    達成:{achieveRate}%<br/>差異:{gapRate > 0 ? `+${gapRate}%` : `${gapRate}%`}
+                                                    達:{achieveRate}% / 差:{gapRate > 0 ? `+${gapRate}%` : `${gapRate}%`}
                                                 </div>
+                                                {/* 嵌入排名區塊 */}
+                                                {renderRankings(item.id)}
                                             </div>
                                         )
                                     })}
@@ -788,68 +770,66 @@
                             )}
                         </div>
 
-                        {/* 下半部：明細與圖表 */}
-                        <div className="flex flex-col flex-1 gap-1.5">
-                            {/* 橫向資料表 */}
-                            <div className="bg-white rounded shadow border border-gray-200 overflow-hidden flex flex-col shrink-0">
-                                <h3 className="font-bold text-gray-700 p-1 bg-gray-50 border-b text-xs"><i className="fa-solid fa-table mr-1"></i>每日總計明細 (7月)</h3>
-                                <div className="overflow-x-auto hide-scroll p-1 w-full">
-                                    <table className="w-full text-center border-collapse text-[10px]">
-                                        <thead>
-                                            <tr>
-                                                <th className="p-0.5 px-1 bg-gray-800 text-white border sticky left-0 z-10 min-w-[50px]">項目 \ 日期</th>
-                                                {dates.map(date => {
-                                                    const day = parseInt(date.substring(8));
-                                                    const d = new Date(date.replace(/-/g, '/'));
-                                                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                                                    return (
-                                                        <th key={date} className={`p-0.5 border min-w-[22px] ${isWeekend ? 'text-red-500 bg-red-50' : 'bg-gray-100'}`}>
-                                                            {day}
-                                                        </th>
-                                                    )
-                                                })}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td className="p-0.5 bg-gray-50 font-bold border sticky left-0 z-10 text-left pl-1">來客數</td>
-                                                {dates.map(date => <td key={`cust-${date}`} className="p-0.5 border text-gray-700">
-                                                    {trendData.dailyTotals[date] ? trendData.dailyTotals[date].customers : ''}
+                        {/* 橫向資料表 */}
+                        <div className="bg-white rounded shadow border border-gray-200 overflow-hidden flex flex-col shrink-0">
+                            <h3 className="font-bold text-gray-700 p-1 bg-gray-50 border-b text-xs"><i className="fa-solid fa-table mr-1"></i>每日總計明細</h3>
+                            <div className="overflow-x-auto hide-scroll p-1 w-full">
+                                <table className="w-full text-center border-collapse text-[10px]">
+                                    <thead>
+                                        <tr>
+                                            <th className="p-0.5 px-1 bg-gray-800 text-white border sticky left-0 z-10 min-w-[50px]">項目 \ 日期</th>
+                                            {dates.map(date => {
+                                                const day = parseInt(date.substring(8));
+                                                const d = new Date(date.replace(/-/g, '/'));
+                                                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                                                return (
+                                                    <th key={date} className={`p-0.5 border min-w-[22px] ${isWeekend ? 'text-red-500 bg-red-50' : 'bg-gray-100'}`}>
+                                                        {day}
+                                                    </th>
+                                                )
+                                            })}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td className="p-0.5 bg-gray-50 font-bold border sticky left-0 z-10 text-left pl-1">來客數</td>
+                                            {dates.map(date => <td key={`cust-${date}`} className="p-0.5 border text-gray-700">
+                                                {trendData.dailyTotals[date] ? trendData.dailyTotals[date].customers : ''}
+                                            </td>)}
+                                        </tr>
+                                        {ITEM_CONFIG.map(item => (
+                                            <tr key={`row-${item.id}`}>
+                                                <td className="p-0.5 bg-white font-semibold border sticky left-0 z-10 text-left pl-1" style={{color: item.color}}>{item.name}</td>
+                                                {dates.map(date => <td key={`${item.id}-${date}`} className="p-0.5 border text-gray-700">
+                                                    {trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : ''}
                                                 </td>)}
                                             </tr>
-                                            {ITEM_CONFIG.map(item => (
-                                                <tr key={`row-${item.id}`}>
-                                                    <td className="p-0.5 bg-white font-semibold border sticky left-0 z-10 text-left pl-1" style={{color: item.color}}>{item.name}</td>
-                                                    {dates.map(date => <td key={`${item.id}-${date}`} className="p-0.5 border text-gray-700">
-                                                        {trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : ''}
-                                                    </td>)}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
+                        </div>
 
-                            {/* 圖表 */}
-                            <div className="bg-white p-1 rounded shadow border border-gray-200 flex flex-col min-h-[250px] shrink-0">
-                                <div className="flex flex-wrap gap-2 mb-1 px-1 justify-center border-b pb-1">
-                                    {ITEM_CONFIG.map(item => (
-                                        <label key={`rad-${item.id}`} className="flex items-center text-[10px] cursor-pointer">
-                                            <input type="radio" checked={visibleChart === item.id}
-                                                onChange={() => setVisibleChart(item.id)} className="mr-0.5" />
-                                            <span style={{color: item.color}} className="font-bold">{item.name}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                                <div className="relative flex-1 w-full">
-                                    <canvas id="trendChart"></canvas>
-                                </div>
+                        {/* 圖表 */}
+                        <div className="bg-white p-1 rounded shadow border border-gray-200 flex flex-col min-h-[250px] shrink-0">
+                            <div className="flex flex-wrap gap-2 mb-1 px-1 justify-center border-b pb-1">
+                                {ITEM_CONFIG.map(item => (
+                                    <label key={`rad-${item.id}`} className="flex items-center text-[10px] cursor-pointer">
+                                        <input type="radio" checked={visibleChart === item.id}
+                                            onChange={() => setVisibleChart(item.id)} className="mr-0.5" />
+                                        <span style={{color: item.color}} className="font-bold">{item.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="relative flex-1 w-full">
+                                <canvas id="trendChart"></canvas>
                             </div>
                         </div>
                     </div>
                 );
             };
 
+            // 5. 店長設定
             const renderSettings = () => (
                 <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
                     <h2 className="text-lg font-bold text-gray-800 mb-4"><i className="fa-solid fa-gear mr-2 text-gray-500"></i>店長各項指標設定</h2>
@@ -872,7 +852,7 @@
                                         <td className="p-2 border text-gray-500 text-xs">{item.type === 'amount' ? '當班業績' : '當班來客數'}</td>
                                         <td className="p-2 border">
                                             <div className="flex items-center">
-                                                <input type="number" className="p-1 border rounded w-20 text-center" 
+                                                <input type="number" className="p-1 border rounded w-20 text-center outline-none focus:ring-1 focus:ring-blue-300" 
                                                     value={settings[item.id]?.rate !== undefined ? settings[item.id].rate : ''} 
                                                     onChange={(e) => handleSettingChange(item.id, 'rate', e.target.value)} />
                                                 <span className="ml-1 text-gray-500">%</span>
@@ -880,7 +860,7 @@
                                         </td>
                                         <td className="p-2 border">
                                             <div className="flex items-center">
-                                                <input type="number" className="p-1 border rounded w-20 text-center" 
+                                                <input type="number" className="p-1 border rounded w-20 text-center outline-none focus:ring-1 focus:ring-blue-300" 
                                                     value={settings[item.id]?.score !== undefined ? settings[item.id].score : ''} 
                                                     onChange={(e) => handleSettingChange(item.id, 'score', e.target.value)} />
                                                 <span className="ml-1 text-gray-500">分</span>
