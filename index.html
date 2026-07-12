@@ -29,7 +29,8 @@
 <body>
     <div id="root"></div>
 
-    <script type="module">
+    <!-- 修正：加入 type="text/babel" 並使用 data-type="module" 以支援 Firebase 模組與 React JSX 編譯 -->
+    <script type="text/babel" data-type="module">
         // Import the functions you need from the SDKs you need
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, getDocs } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
@@ -545,7 +546,7 @@
                             );
                         })()}
 
-                        {/* 店長稽核 (新增功能) */}
+                        {/* 店長稽核 */}
                         {activeTab === 'audit' && (() => {
                             const auditItems = [
                                 { id: 'orders', name: '總來客數', isAmount: false },
