@@ -349,6 +349,18 @@
             const renderSummary = () => {
                 const summaryData = { customers: 0, revenue: 0, atv: 0 };
                 ITEM_CONFIG.forEach(i => summaryData[i.id] = 0);
+                
+                // 用於存放各班的獨立累計數據 (排名用)
+                const shiftBreakdown = {
+                    morning: { customers: 0, revenue: 0 },
+                    evening: { customers: 0, revenue: 0 },
+                    night: { customers: 0, revenue: 0 }
+                };
+                ITEM_CONFIG.forEach(i => {
+                    shiftBreakdown.morning[i.id] = 0;
+                    shiftBreakdown.evening[i.id] = 0;
+                    shiftBreakdown.night[i.id] = 0;
+                });
 
                 let displayTitle = "三班數據累加結算";
 
@@ -360,7 +372,14 @@
                                 const sData = database[selectedDate][shift];
                                 summaryData.customers += Number(sData.customers) || 0;
                                 summaryData.revenue += Number(sData.revenue) || 0;
-                                ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
+                                shiftBreakdown[shift].customers += Number(sData.customers) || 0;
+                                shiftBreakdown[shift].revenue += Number(sData.revenue) || 0;
+                                
+                                ITEM_CONFIG.forEach(i => {
+                                    const val = Number(sData[i.id]) || 0;
+                                    summaryData[i.id] += val;
+                                    shiftBreakdown[shift][i.id] += val;
+                                });
                             }
                         });
                     }
@@ -388,7 +407,14 @@
                                     const sData = database[dateKey][shift];
                                     summaryData.customers += Number(sData.customers) || 0;
                                     summaryData.revenue += Number(sData.revenue) || 0;
-                                    ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
+                                    shiftBreakdown[shift].customers += Number(sData.customers) || 0;
+                                    shiftBreakdown[shift].revenue += Number(sData.revenue) || 0;
+                                    
+                                    ITEM_CONFIG.forEach(i => {
+                                        const val = Number(sData[i.id]) || 0;
+                                        summaryData[i.id] += val;
+                                        shiftBreakdown[shift][i.id] += val;
+                                    });
                                 }
                             });
                         }
@@ -396,6 +422,51 @@
                 }
                 
                 summaryData.atv = summaryData.customers > 0 ? Math.round(summaryData.revenue / summaryData.customers) : 0;
+                
+                // 產生排名的 Helper Function
+                const renderRankings = (itemId) => {
+                    const data = [
+                        { shift: '早', val: shiftBreakdown.morning[itemId] || 0, color: 'text-orange-600', bg: 'bg-orange-100', border: 'border-orange-200' },
+                        { shift: '晚', val: shiftBreakdown.evening[itemId] || 0, color: 'text-indigo-600', bg: 'bg-indigo-100', border: 'border-indigo-200' },
+                        { shift: '夜', val: shiftBreakdown.night[itemId] || 0, color: 'text-gray-800', bg: 'bg-gray-200', border: 'border-gray-300' }
+                    ];
+                    
+                    // 降冪排序，如果數值為 0 則排在後面
+                    data.sort((a, b) => b.val - a.val);
+                    
+                    // 處理同燈同分與 0 分不排名
+                    let currentRank = 1;
+                    for (let i = 0; i < data.length; i++) {
+                        if (i > 0 && data[i].val < data[i-1].val) {
+                            currentRank = i + 1;
+                        }
+                        data[i].rank = data[i].val === 0 ? '-' : currentRank;
+                    }
+
+                    return (
+                        <div className="flex flex-col gap-1 mt-1 pl-2 border-l-2 border-gray-200">
+                            {data.map((d, i) => (
+                                <div key={i} className="flex justify-between items-center text-[10px]">
+                                    <div className="flex items-center gap-1.5">
+                                        {/* 排名圖示 */}
+                                        {d.rank === 1 ? (
+                                            <span className="text-yellow-500 w-3 text-center"><i className="fa-solid fa-crown"></i></span>
+                                        ) : d.rank === 2 ? (
+                                            <span className="text-gray-400 w-3 text-center"><i className="fa-solid fa-medal"></i></span>
+                                        ) : d.rank === 3 ? (
+                                            <span className="text-amber-700 w-3 text-center"><i className="fa-solid fa-award"></i></span>
+                                        ) : (
+                                            <span className="text-gray-300 w-3 text-center text-[8px]"><i className="fa-solid fa-minus"></i></span>
+                                        )}
+                                        <span className={`px-1 rounded border ${d.bg} ${d.border} ${d.color} font-bold leading-none py-0.5`}>{d.shift}</span>
+                                    </div>
+                                    <span className="font-bold text-gray-700">{d.val}</span>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                };
+
 
                 return (
                     <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
@@ -436,7 +507,7 @@
                                 <tr className="bg-gray-800 text-white">
                                     <th className="p-2 rounded-tl">評估項目</th>
                                     <th className="p-2 text-right">目標</th>
-                                    <th className="p-2 text-right">實際總和</th>
+                                    <th className="p-2 text-right min-w-[80px]">實際總和<br/><span className="text-[9px] text-gray-300 font-normal">及各班貢獻排名</span></th>
                                     <th className="p-2 text-right">差異數</th>
                                     <th className="p-2 text-right">達成率</th>
                                     <th className="p-2 text-right rounded-tr">差異率</th>
@@ -451,18 +522,22 @@
                                     
                                     return (
                                         <tr key={`sum-${item.id}`} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                                            <td className="p-2 border-b font-semibold border-l">{item.name}</td>
-                                            <td className="p-2 border-b text-right text-gray-600">{target}</td>
-                                            <td className="p-2 border-b text-right font-bold text-blue-600">{actual}</td>
-                                            <td className={`p-2 border-b text-right font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                            <td className="p-2 border-b font-semibold border-l align-top">{item.name}</td>
+                                            <td className="p-2 border-b text-right text-gray-600 align-top">{target}</td>
+                                            <td className="p-2 border-b align-top">
+                                                <div className="text-right font-bold text-blue-600 mb-1">{actual}</div>
+                                                {/* 只在本月或上月累計時顯示排名 */}
+                                                {(summaryRange === 'currentMonth' || summaryRange === 'lastMonth') && renderRankings(item.id)}
+                                            </td>
+                                            <td className={`p-2 border-b text-right font-bold align-top ${isGood ? 'text-green-600' : 'text-red-500'}`}>
                                                 {gap > 0 ? `+${gap}` : gap}
                                             </td>
-                                            <td className="p-2 border-b text-right">
+                                            <td className="p-2 border-b text-right align-top">
                                                 <span className={`px-1 rounded text-xs font-bold ${isGood ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                                     {achieveRate}%
                                                 </span>
                                             </td>
-                                            <td className={`p-2 border-b text-right font-bold text-xs border-r ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                            <td className={`p-2 border-b text-right font-bold text-xs border-r align-top ${isGood ? 'text-green-600' : 'text-red-500'}`}>
                                                 {gapRate > 0 ? `+${gapRate}%` : `${gapRate}%`}
                                             </td>
                                         </tr>
