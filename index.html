@@ -569,7 +569,11 @@
                 
                 // 初始化累計容器
                 const currentCumulative = { customers: 0, revenue: 0 };
-                const currentShiftBreakdown = { morning: {}, evening: {}, night: {} };
+                const currentShiftBreakdown = { 
+                    morning: { customers: 0, revenue: 0 }, 
+                    evening: { customers: 0, revenue: 0 }, 
+                    night: { customers: 0, revenue: 0 } 
+                };
                 
                 ITEM_CONFIG.forEach(i => {
                     currentCumulative[i.id] = 0;
@@ -604,6 +608,8 @@
                         ['morning', 'evening', 'night'].forEach(shift => {
                             if (database[date][shift]) {
                                 const sData = database[date][shift];
+                                currentShiftBreakdown[shift].customers += Number(sData.customers) || 0;
+                                currentShiftBreakdown[shift].revenue += Number(sData.revenue) || 0;
                                 ITEM_CONFIG.forEach(i => {
                                     currentShiftBreakdown[shift][i.id] += Number(sData[i.id]) || 0;
                                 });
@@ -686,24 +692,33 @@
                 const latestCumulative = todayData ? trendData.cumulative[inputDate] : null;
                 const latestBreakdown = todayData ? trendData.shiftBreakdown[inputDate] : null;
 
-                // 渲染單一項目的三班排名
+                // 渲染單一項目的三班排名 (改為達成率 %)
                 const renderRankings = (itemId) => {
                     if (!latestBreakdown || trendFilter !== 'all') return null; 
 
+                    // 計算各班別目前的達成率
+                    const getShiftMetrics = (shiftKey) => {
+                        const actual = latestBreakdown[shiftKey][itemId] || 0;
+                        const target = calculateTarget(latestBreakdown[shiftKey], itemId);
+                        return target > 0 ? Math.round((actual / target) * 100) : (actual > 0 ? 100 : 0);
+                    };
+
                     const rankings = [
-                        { shift: '早', val: latestBreakdown.morning[itemId] || 0, color: 'text-orange-500' },
-                        { shift: '晚', val: latestBreakdown.evening[itemId] || 0, color: 'text-blue-500' },
-                        { shift: '夜', val: latestBreakdown.night[itemId] || 0, color: 'text-gray-800' }
+                        { shift: '早', rate: getShiftMetrics('morning'), actual: latestBreakdown.morning[itemId] || 0, color: 'text-orange-500' },
+                        { shift: '晚', rate: getShiftMetrics('evening'), actual: latestBreakdown.evening[itemId] || 0, color: 'text-blue-500' },
+                        { shift: '夜', rate: getShiftMetrics('night'), actual: latestBreakdown.night[itemId] || 0, color: 'text-gray-800' }
                     ];
 
-                    rankings.sort((a, b) => b.val - a.val);
+                    // 依照達成率(%)由大到小排序
+                    rankings.sort((a, b) => b.rate - a.rate);
 
                     let currentRank = 1;
                     for (let i = 0; i < rankings.length; i++) {
-                        if (i > 0 && rankings[i].val < rankings[i-1].val) {
+                        if (i > 0 && rankings[i].rate < rankings[i-1].rate) {
                             currentRank = i + 1;
                         }
-                        rankings[i].rank = rankings[i].val === 0 ? '-' : currentRank;
+                        // 如果該班別沒有輸入數字且達成率為0，則不列入排名 (顯示為 - )
+                        rankings[i].rank = rankings[i].rate === 0 && rankings[i].actual === 0 ? '-' : currentRank;
                     }
 
                     return (
@@ -716,7 +731,7 @@
                                          d.rank === 2 ? <i className="fa-solid fa-medal text-gray-400 text-[9px]"></i> :
                                          d.rank === 3 ? <i className="fa-solid fa-award text-amber-700 text-[9px]"></i> :
                                          <span className="w-[9px]"></span>}
-                                        <span className="font-bold text-gray-700">{d.val}</span>
+                                        <span className="font-bold text-gray-700">{d.rate}% <span className="text-[8px] font-normal text-gray-400">({d.actual})</span></span>
                                     </div>
                                 </div>
                             ))}
