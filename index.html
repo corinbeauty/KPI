@@ -4,37 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>中清店12生肖戰報</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; margin: 0; height: 100vh; overflow: hidden; }
-        #root { height: 100%; display: flex; flex-direction: column; }
-        /* 隱藏原生 input number 的上下箭頭 */
-        input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type=number] { -moz-appearance: textfield; text-align: right; }
-        /* 自訂捲軸 */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f1f1; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .tab-content { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
 
-    <!-- 修正：加入 type="text/babel" 並使用 data-type="module" 以支援 Firebase 模組與 React JSX 編譯 -->
-    <script type="text/babel" data-type="module">
-        // Import the functions you need from the SDKs you need
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, getDocs } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
+    <!-- Firebase SDK Setup -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -52,721 +27,736 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        // 使用符合 Immersive 安全規範的路徑
-        const safeCollectionPath = 'artifacts/akpi-e0698/public/data';
-        const recordsDocRef = doc(db, safeCollectionPath, 'records');
-        const settingsDocRef = doc(db, safeCollectionPath, 'settings');
+        // Export globally for React to pick up
+        window.fb = { app, db, auth, doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged };
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
 
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* 強制滿版一頁式設計 */
+        body { margin: 0; padding: 0; height: 100vh; overflow: hidden; background-color: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #root { height: 100%; }
+        
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #1d4ed8; font-weight: bold; background-color: #eff6ff;}
+        .tab-inactive { color: #64748b; }
+        .tab-inactive:hover { background-color: #e2e8f0; color: #334155; }
+        input[type="number"], input[type="date"] { text-align: right; }
+        
+        /* 隱藏數字輸入框的上下調整鍵 */
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield;
+        }
+
+        /* 針對截圖優化背景 */
+        .screenshot-area { background: white; }
+        
+        /* 捲軸美化與縮小 */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
         const { useState, useMemo, useEffect, useRef } = React;
 
         const ITEM_CONFIG = [
-            { id: 'chickenSoup', name: '雞湯單點', type: 'count', unit: '數量', defaultRate: 15, defaultScore: 2, color: 'rgb(249, 115, 22)' }, // orange
-            { id: 'essence', name: '滴雞精', type: 'count', unit: '單數', defaultRate: 5, defaultScore: 2, color: 'rgb(139, 69, 19)' }, // saddlebrown
-            { id: 'setMeal', name: '套餐', type: 'count', unit: '單數', defaultRate: 12, defaultScore: 2, color: 'rgb(59, 130, 246)' }, // blue
-            { id: 'fascia', name: '筋膜', type: 'amount', unit: '金額', defaultRate: 7, defaultScore: 2, color: 'rgb(168, 85, 247)' }, // purple
-            { id: 'review', name: '評論', type: 'count', unit: '則數', defaultRate: 10, defaultScore: 1, color: 'rgb(234, 179, 8)' }, // yellow
-            { id: 'app', name: '會員APP', type: 'count', unit: '單數', defaultRate: 6, defaultScore: 1, color: 'rgb(34, 197, 94)' } // green
+            { id: 'chickenSoup', name: '雞湯單點', type: 'count', unit: '數量', defaultRate: 15, defaultScore: 10, color: 'rgb(251, 146, 60)' },
+            { id: 'essence', name: '滴雞精', type: 'count', unit: '單數', defaultRate: 5, defaultScore: 10, color: '#8B4513' },
+            { id: 'setMeal', name: '套餐', type: 'count', unit: '單數', defaultRate: 12, defaultScore: 10, color: 'rgb(74, 222, 128)' },
+            { id: 'fascia', name: '筋膜刀', type: 'amount', unit: '金額', defaultRate: 7, defaultScore: 10, color: 'rgb(248, 113, 113)' },
+            { id: 'review', name: '評論', type: 'count', unit: '則數', defaultRate: 10, defaultScore: 10, color: 'rgb(96, 165, 250)' },
+            { id: 'app', name: '會員APP', type: 'count', unit: '單數', defaultRate: 6, defaultScore: 5, color: 'rgb(167, 139, 250)' }
         ];
 
         function App() {
-            // 系統狀態
-            const [activeTab, setActiveTab] = useState('night'); 
-            const [isSaving, setIsSaving] = useState(false);
-            const [isAuth, setIsAuth] = useState(false);
-            const chartRef = useRef(null);
-
-            // 取得今日日期字串 YYYY-MM-DD
-            const getTodayStr = () => {
-                const today = new Date();
-                return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-            };
-            const [currentDate, setCurrentDate] = useState(getTodayStr());
-
-            // 趨勢圖表與累加查詢狀態
-            const [trendMonth, setTrendMonth] = useState(getTodayStr().substring(0, 7)); // YYYY-MM
-            const [trendShiftFilter, setTrendShiftFilter] = useState('all'); 
-            const [chartTargetItem, setChartTargetItem] = useState('chickenSoup'); 
+            const [activeTab, setActiveTab] = useState('morning');
             
-            // 三班累加查詢模式
-            const [summaryMode, setSummaryMode] = useState('month'); 
+            const todayStr = '2026-07-11';
+            const [selectedDate, setSelectedDate] = useState(todayStr); 
+            const [inputDate, setInputDate] = useState(todayStr);       
+            const [database, setDatabase] = useState({});
+            
+            // 趨勢圖表篩選 (早/晚/夜/全部)
+            const [trendFilter, setTrendFilter] = useState('all');
+            
+            // 折線圖顯示項目的單選控制
+            const [visibleChart, setVisibleChart] = useState(ITEM_CONFIG[0].id);
 
-            // 店長設定 
-            const [settings, setSettings] = useState({
-                rates: ITEM_CONFIG.reduce((acc, item) => ({ ...acc, [item.id]: item.defaultRate }), {}),
-                scores: ITEM_CONFIG.reduce((acc, item) => ({ ...acc, [item.id]: item.defaultScore }), {}),
-                baseScore: 55
-            });
+            // 店長設定狀態 (包含目標%與分數)
+            const [settings, setSettings] = useState(
+                ITEM_CONFIG.reduce((acc, item) => ({ 
+                    ...acc, 
+                    [item.id]: { rate: item.defaultRate, score: item.defaultScore } 
+                }), {})
+            );
 
-            // 每日紀錄資料庫 (新增 manager 節點供店長稽核使用)
-            const initialShiftData = {
-                orders: '', revenue: '',
-                chickenSoup: '', essence: '', setMeal: '', fascia: '', review: '', app: ''
-            };
-            const [dailyRecords, setDailyRecords] = useState({});
-
-            // 載入當日編輯區資料，並確保所有班別物件都絕對存在 (防止部分班別資料缺失導致的白畫面)
-            const rawDayData = dailyRecords[currentDate] || {};
-            const currentDayData = {
-                morning: rawDayData.morning || { ...initialShiftData },
-                evening: rawDayData.evening || { ...initialShiftData },
-                night: rawDayData.night || { ...initialShiftData },
-                manager: rawDayData.manager || { ...initialShiftData }
-            };
-
-            // Firebase 初始化與即時監聽
+            // Firebase 狀態同步
             useEffect(() => {
-                const initFirebase = async () => {
-                    try {
-                        await signInAnonymously(auth);
-                        setIsAuth(true);
+                const initFb = () => {
+                    const { auth, signInAnonymously, onAuthStateChanged, db, collection, onSnapshot } = window.fb;
+                    
+                    signInAnonymously(auth).catch(e => console.error("Firebase auth error, ensure Anonymous auth is enabled:", e));
 
-                        onSnapshot(settingsDocRef, (docSnap) => {
-                            if (docSnap.exists()) {
-                                setSettings(prev => ({ ...prev, ...docSnap.data() }));
-                            }
-                        });
+                    const unsubAuth = onAuthStateChanged(auth, user => {
+                        window.firebaseUser = user;
+                        if (user) {
+                            const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                            const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
+                            const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
 
-                        onSnapshot(recordsDocRef, (docSnap) => {
-                            if (docSnap.exists()) {
-                                setDailyRecords(docSnap.data() || {});
-                            }
-                        });
-                    } catch (error) {
-                        console.error("Firebase Auth/Data Error:", error);
-                    }
+                            // 監聽歷史紀錄表
+                            onSnapshot(recordsRef, snap => {
+                                const newDb = {};
+                                snap.forEach(d => newDb[d.id] = d.data());
+                                setDatabase(newDb);
+                            }, err => console.error("Records snapshot error:", err));
+                            
+                            // 監聽店長設定
+                            onSnapshot(settingsRef, snap => {
+                                snap.forEach(d => {
+                                    if (d.id === "global" && d.data().rates) {
+                                        setSettings(prev => ({ ...prev, ...d.data().rates }));
+                                    }
+                                });
+                            }, err => console.error("Settings snapshot error:", err));
+                        }
+                    });
                 };
-                initFirebase();
+
+                if (window.fb) initFb();
+                else window.addEventListener('firebase-ready', initFb);
+                
+                return () => window.removeEventListener('firebase-ready', initFb);
             }, []);
 
-            // 儲存資料到 Firebase
-            const saveRecordToCloud = async (newData) => {
-                if (!isAuth) return;
-                setIsSaving(true);
-                try {
-                    await setDoc(recordsDocRef, newData, { merge: true });
-                } catch (error) {
-                    console.error("Save Record Error:", error);
-                }
-                setIsSaving(false);
+            const getCurrentShiftData = (date, shift) => {
+                if (database[date] && database[date][shift]) return database[date][shift];
+                const emptyData = { customers: '', revenue: '' };
+                ITEM_CONFIG.forEach(item => emptyData[item.id] = '');
+                return emptyData;
             };
 
-            const saveSettingsToCloud = async (newSettings) => {
-                if (!isAuth) return;
-                try {
-                    await setDoc(settingsDocRef, newSettings, { merge: true });
-                } catch (error) {
-                    console.error("Save Settings Error:", error);
-                }
-            };
-
-            // 處理班別或店長資料變更
             const handleShiftChange = (shift, field, value) => {
                 const parsedValue = value === '' ? '' : Number(value);
-                
-                const updatedDayData = {
-                    ...currentDayData,
-                    [shift]: { ...currentDayData[shift], [field]: parsedValue }
-                };
-
-                const updatedRecords = {
-                    ...dailyRecords,
-                    [currentDate]: updatedDayData
-                };
-                
-                setDailyRecords(updatedRecords);
-                saveRecordToCloud({ [currentDate]: updatedDayData });
-            };
-
-            const handleSettingChange = (category, field, value) => {
-                const newSettings = {
-                    ...settings,
-                    [category]: { ...settings[category], [field]: Number(value) || 0 }
-                };
-                setSettings(newSettings);
-                saveSettingsToCloud(newSettings);
-            };
-
-            const calculateTarget = (data, itemId) => {
-                const rate = settings.rates[itemId] || 0;
-                const config = ITEM_CONFIG.find(i => i.id === itemId);
-                const baseValue = config.type === 'amount' ? (Number(data.revenue)||0) : (Number(data.orders)||0);
-                return Math.ceil(baseValue * (rate / 100));
-            };
-
-            const formatGap = (actual, target) => {
-                if (actual === '' && target === 0) return '';
-                const actNum = Number(actual) || 0;
-                const gap = actNum - target;
-                if (gap > 0) return `+${gap}`;
-                return gap;
-            };
-
-            const getDaysInMonth = (yearMonthStr) => {
-                const [year, month] = yearMonthStr.split('-');
-                return new Date(year, month, 0).getDate();
-            };
-
-            const isWeekend = (yearMonthStr, day) => {
-                const [year, month] = yearMonthStr.split('-');
-                const date = new Date(year, month - 1, day);
-                const dayOfWeek = date.getDay();
-                return dayOfWeek === 0 || dayOfWeek === 6;
-            };
-
-            const getSummaryData = () => {
-                const summary = { ...initialShiftData, atv: 0 };
-                Object.keys(summary).forEach(k => summary[k] = 0);
-
-                let targetRecords = {};
-                let targetDateStr = currentDate; 
-
-                if (summaryMode === 'day') {
-                    targetRecords = { [currentDate]: dailyRecords[currentDate] };
-                } else if (summaryMode === 'month') {
-                    const currentMonthStr = currentDate.substring(0, 7);
-                    Object.keys(dailyRecords).forEach(date => {
-                        if (date.startsWith(currentMonthStr)) {
-                            targetRecords[date] = dailyRecords[date];
-                        }
-                    });
-                    targetDateStr = `${currentMonthStr} 月累計`;
-                } else if (summaryMode === 'lastMonth') {
-                    const dateObj = new Date(currentDate);
-                    dateObj.setMonth(dateObj.getMonth() - 1);
-                    const lastMonthStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-                    Object.keys(dailyRecords).forEach(date => {
-                        if (date.startsWith(lastMonthStr)) {
-                            targetRecords[date] = dailyRecords[date];
-                        }
-                    });
-                    targetDateStr = `${lastMonthStr} 月累計`;
-                }
-
-                Object.values(targetRecords).forEach(dayData => {
-                    if(!dayData) return;
-                    ['night', 'morning', 'evening'].forEach(s => {
-                        if(dayData[s]) {
-                            Object.keys(initialShiftData).forEach(key => {
-                                summary[key] += (Number(dayData[s][key]) || 0);
-                            });
-                        }
-                    });
-                });
-                
-                summary.atv = summary.orders > 0 ? Math.round(summary.revenue / summary.orders) : 0;
-                return { summary, targetDateStr };
-            };
-
-
-            useEffect(() => {
-                if (activeTab === 'trend' && chartTargetItem) {
-                    const ctx = document.getElementById('trendChart');
-                    if (!ctx) return;
-
-                    const days = getDaysInMonth(trendMonth);
-                    const labels = Array.from({length: days}, (_, i) => `${i + 1}`);
+                setDatabase(prev => {
+                    const newDb = { ...prev };
+                    if (!newDb[inputDate]) {
+                        newDb[inputDate] = {
+                            morning: getCurrentShiftData('new', 'morning'),
+                            evening: getCurrentShiftData('new', 'evening'),
+                            night: getCurrentShiftData('new', 'night')
+                        };
+                    }
+                    newDb[inputDate][shift] = { ...newDb[inputDate][shift], [field]: parsedValue };
                     
-                    const itemData = [];
-                    const config = ITEM_CONFIG.find(i => i.id === chartTargetItem);
-
-                    for (let i = 1; i <= days; i++) {
-                        const dateStr = `${trendMonth}-${String(i).padStart(2, '0')}`;
-                        const dayData = dailyRecords[dateStr];
-                        
-                        if (!dayData) {
-                            itemData.push(null);
-                            continue;
-                        }
-
-                        let val = 0;
-                        let hasData = false;
-                        if (trendShiftFilter === 'all') {
-                            ['night', 'morning', 'evening'].forEach(s => {
-                                if(dayData[s] && dayData[s][chartTargetItem] !== '') {
-                                    val += Number(dayData[s][chartTargetItem]);
-                                    hasData = true;
-                                }
-                            });
-                        } else {
-                            if(dayData[trendShiftFilter] && dayData[trendShiftFilter][chartTargetItem] !== '') {
-                                val = Number(dayData[trendShiftFilter][chartTargetItem]);
-                                hasData = true;
-                            }
-                        }
-                        itemData.push(hasData ? val : null);
+                    // 雲端同步寫入 Firebase
+                    if (window.fb && window.firebaseUser) {
+                        const { db, doc, setDoc } = window.fb;
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', inputDate);
+                        setDoc(docRef, newDb[inputDate], { merge: true }).catch(e => console.error("DB Write Error:", e));
                     }
+                    
+                    return newDb;
+                });
+            };
 
-                    if (chartRef.current) {
-                        chartRef.current.destroy();
+            const handleSettingChange = (itemId, field, value) => {
+                const parsedValue = value === '' ? '' : Number(value);
+                setSettings(prev => {
+                    const newSettings = { ...prev, [itemId]: { ...prev[itemId], [field]: parsedValue } };
+                    
+                    // 雲端同步店長設定
+                    if (window.fb && window.firebaseUser) {
+                        const { db, doc, setDoc } = window.fb;
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                        setDoc(docRef, { rates: newSettings }, { merge: true }).catch(e => console.error("DB Write Error:", e));
                     }
+                    
+                    return newSettings;
+                });
+            };
 
-                    chartRef.current = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: labels,
-                            datasets: [{
-                                label: config.name,
-                                data: itemData,
-                                borderColor: config.color,
-                                backgroundColor: config.color,
-                                tension: 0.1,
-                                spanGaps: false 
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { position: 'top' }
-                            },
-                            scales: {
-                                y: { beginAtZero: true }
-                            }
-                        }
-                    });
-                }
-            }, [activeTab, trendMonth, trendShiftFilter, chartTargetItem, dailyRecords]);
+            const calculateTarget = (baseData, itemId) => {
+                const config = ITEM_CONFIG.find(i => i.id === itemId);
+                const baseValue = config.type === 'amount' ? (Number(baseData.revenue) || 0) : (Number(baseData.customers) || 0);
+                const rate = Number(settings[itemId]?.rate) || 0;
+                return Math.ceil(baseValue * (rate / 100)); // 修正為無條件進位並避免字串計算錯誤
+            };
 
+            const calcMetrics = (target, actualValue) => {
+                const actual = Number(actualValue) || 0;
+                const gap = actual - target;
+                const achieveRate = target > 0 ? ((actual / target) * 100).toFixed(1) : (actual > 0 ? 100 : 0);
+                // 差異%數 (Gap %)
+                const gapRate = target > 0 ? ((gap / target) * 100).toFixed(1) : 0;
+                return { gap, achieveRate, gapRate };
+            };
 
             const renderShiftTab = (shiftKey, shiftName, icon, colorClass, bgColorClass) => {
-                const data = currentDayData[shiftKey];
-                const atv = data.orders > 0 ? Math.round(data.revenue / data.orders) : 0;
-                const displayDate = `${currentDate.split('-')[1]}/${currentDate.split('-')[2]}`;
+                const data = getCurrentShiftData(inputDate, shiftKey);
+                const customersNum = Number(data.customers) || 0;
+                const revenueNum = Number(data.revenue) || 0;
+                const atv = customersNum > 0 ? Math.round(revenueNum / customersNum) : 0;
 
                 return (
-                    <div className="tab-content h-full flex flex-col md:flex-row p-2 gap-2">
-                        {/* 左側輸入區 */}
-                        <div className="w-full md:w-1/3 bg-white p-3 rounded-lg shadow border flex flex-col">
-                            <h3 className={`text-lg font-bold mb-3 pb-2 border-b ${colorClass}`}><i className={`fa-solid ${icon} mr-1`}></i>數據輸入區</h3>
-                            
-                            <div className="grid grid-cols-2 gap-2 mb-3">
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">來客數</label>
-                                    <input type="number" className="w-full p-1.5 border rounded bg-gray-50 text-sm font-bold" 
-                                        value={data.orders} onChange={(e) => handleShiftChange(shiftKey, 'orders', e.target.value)} placeholder="0" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-500 mb-1">總業績</label>
-                                    <input type="number" className="w-full p-1.5 border rounded bg-gray-50 text-sm font-bold" 
-                                        value={data.revenue} onChange={(e) => handleShiftChange(shiftKey, 'revenue', e.target.value)} placeholder="0" />
+                    <div className="flex flex-col md:flex-row h-full gap-2 overflow-hidden text-sm">
+                        {/* 左側：數據輸入區 */}
+                        <div className="w-full md:w-1/2 flex flex-col gap-1.5">
+                            <div className="bg-white p-1.5 rounded shadow-sm border border-gray-200 flex justify-between items-center shrink-0">
+                                <h2 className={`text-base font-bold ${colorClass}`}><i className={`fa-solid ${icon} mr-1`}></i>{shiftName} 數據輸入</h2>
+                                <div className="flex items-center">
+                                    <label className="text-gray-600 mr-1 font-semibold text-xs">日期:</label>
+                                    <input type="date" value={inputDate} onChange={(e) => setInputDate(e.target.value)} 
+                                        className="p-0.5 border rounded shadow-sm outline-none text-xs" />
                                 </div>
                             </div>
-                            
-                            <div className="space-y-2 overflow-y-auto flex-1 pr-1">
-                                {ITEM_CONFIG.map(item => (
-                                    <div key={item.id} className="flex justify-between items-center bg-gray-50 p-1.5 rounded border">
-                                        <span className="text-sm font-semibold text-gray-700 w-16">{item.name}</span>
-                                        <input type="number" className="w-16 p-1 border border-blue-200 rounded text-sm text-blue-700 font-bold bg-white" 
-                                            value={data[item.id]} onChange={(e) => handleShiftChange(shiftKey, item.id, e.target.value)} placeholder="-" />
+
+                            <div className="bg-white p-2 rounded shadow-sm border border-gray-200 flex-1 overflow-y-auto hide-scroll">
+                                <div className="grid grid-cols-2 gap-2 mb-2 bg-gray-50 p-1.5 rounded">
+                                    <div>
+                                        <label className="block text-xs text-gray-600 mb-0.5">來客數</label>
+                                        <input type="number" className="w-full p-1 border rounded outline-none" 
+                                            value={data.customers !== undefined ? data.customers : ''} onChange={(e) => handleShiftChange(shiftKey, 'customers', e.target.value)} placeholder="0" />
                                     </div>
-                                ))}
-                            </div>
-                            <div className="mt-2 text-xs text-gray-400 text-center flex items-center justify-center">
-                                {isSaving ? <><i className="fa-solid fa-spinner fa-spin mr-1"></i> 儲存中...</> : <><i className="fa-solid fa-cloud-check mr-1 text-green-500"></i> 已雲端同步</>}
+                                    <div>
+                                        <label className="block text-xs text-gray-600 mb-0.5">總業績 (金額)</label>
+                                        <input type="number" className="w-full p-1 border rounded outline-none" 
+                                            value={data.revenue !== undefined ? data.revenue : ''} onChange={(e) => handleShiftChange(shiftKey, 'revenue', e.target.value)} placeholder="0" />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    {ITEM_CONFIG.map(item => (
+                                        <div key={`input-${item.id}`} className="flex items-center justify-between border-b pb-0.5">
+                                            <span className="font-semibold text-gray-700 w-20 text-xs">{item.name}</span>
+                                            <div className="flex items-center w-2/3">
+                                                <span className="text-[10px] text-gray-400 w-12 text-right mr-1">實際:</span>
+                                                <input type="number" className="w-full p-1 border border-blue-200 bg-blue-50/30 rounded outline-none" 
+                                                    value={data[item.id] !== undefined ? data[item.id] : ''} onChange={(e) => handleShiftChange(shiftKey, item.id, e.target.value)} placeholder="0" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
-                        {/* 右側戰報卡片 */}
-                        <div className="w-full md:w-2/3 bg-white p-4 rounded-lg shadow border flex flex-col relative" id="screenshot-area">
-                            <div className={`absolute top-0 left-0 w-full h-1 ${bgColorClass} rounded-t-lg`}></div>
-                            <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                <h2 className={`text-xl font-black ${colorClass}`}><i className={`fa-solid ${icon} mr-2`}></i>中清店 {shiftName}戰報</h2>
-                                <div className="text-sm font-bold bg-gray-100 px-2 py-1 rounded">Date: {displayDate}</div>
+                        {/* 右側：視覺化截圖戰報 */}
+                        <div className="w-full md:w-1/2 screenshot-area bg-white p-2 rounded shadow-md border border-gray-300 flex flex-col overflow-y-auto hide-scroll">
+                            <div className="text-center mb-1.5 shrink-0">
+                                <h2 className="text-lg font-black text-gray-800 tracking-wider">
+                                    <span className={`px-2 py-0.5 rounded text-white ${bgColorClass} mr-2 text-sm`}>{shiftName}</span>
+                                    當班績效戰報
+                                </h2>
+                                <div className="text-gray-500 mt-0.5 font-mono text-[10px]">{inputDate}</div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-2 mb-4">
-                                <div className="bg-gray-50 p-2 rounded text-center border">
-                                    <div className="text-xs text-gray-500">來客數</div>
-                                    <div className="text-lg font-bold">{data.orders || 0}</div>
+                            <div className="grid grid-cols-2 gap-2 mb-2 shrink-0">
+                                <div className="bg-gray-100 p-1.5 rounded text-center border">
+                                    <div className="text-gray-500 text-[10px]">來客數</div>
+                                    <div className="text-base font-bold text-gray-800">{customersNum}</div>
                                 </div>
-                                <div className="bg-gray-50 p-2 rounded text-center border">
-                                    <div className="text-xs text-gray-500">總業績</div>
-                                    <div className="text-lg font-bold">${Number(data.revenue).toLocaleString() || 0}</div>
-                                </div>
-                                <div className="bg-blue-50 p-2 rounded text-center border border-blue-100">
-                                    <div className="text-xs text-blue-600">客單價</div>
-                                    <div className="text-lg font-bold text-blue-700">${atv.toLocaleString()}</div>
+                                <div className="bg-blue-50 p-1.5 rounded text-center border border-blue-100">
+                                    <div className="text-blue-600 text-[10px]">客單價</div>
+                                    <div className="text-base font-bold text-blue-800">${atv.toLocaleString()}</div>
                                 </div>
                             </div>
 
-                            <div className="flex-1">
-                                <table className="w-full text-sm border-collapse">
-                                    <thead>
-                                        <tr className="bg-gray-100 text-gray-600">
-                                            <th className="p-1.5 border text-left">推廣項目</th>
-                                            <th className="p-1.5 border text-right">目標</th>
-                                            <th className="p-1.5 border text-right">實際</th>
-                                            <th className="p-1.5 border text-right">差異</th>
-                                            <th className="p-1.5 border text-right">達成率</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {ITEM_CONFIG.map(item => {
-                                            const target = calculateTarget(data, item.id);
-                                            const actualNum = Number(data[item.id]) || 0;
-                                            const actualDisplay = data[item.id] === '' ? '-' : actualNum;
-                                            const gapDisplay = formatGap(data[item.id], target);
-                                            const isAmount = item.type === 'amount';
-                                            const rate = target > 0 ? Math.round((actualNum / target) * 100) : 0;
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 flex-1 content-start">
+                                {ITEM_CONFIG.map(item => {
+                                    const target = calculateTarget(data, item.id);
+                                    const actual = Number(data[item.id]) || 0;
+                                    const { gap, achieveRate, gapRate } = calcMetrics(target, actual);
+                                    const isGood = gap >= 0;
+
+                                    return (
+                                        <div key={`view-${item.id}`} className="bg-white border rounded p-1.5 shadow-sm relative overflow-hidden flex flex-col justify-center">
+                                            <div className={`absolute left-0 top-0 bottom-0 w-1 ${isGood ? 'bg-green-500' : 'bg-red-400'}`}></div>
                                             
-                                            let gapColor = 'text-gray-500';
-                                            if(data[item.id] !== '') {
-                                                gapColor = (actualNum - target) >= 0 ? 'text-green-600' : 'text-red-500';
-                                            }
-
-                                            return (
-                                                <tr key={item.id} className="border-b hover:bg-gray-50">
-                                                    <td className="p-1.5 font-bold text-gray-700">{item.name} <span className="text-[10px] text-gray-400 font-normal">({settings.rates[item.id]}%)</span></td>
-                                                    <td className="p-1.5 text-right text-gray-500">{isAmount ? '$' : ''}{target.toLocaleString()}</td>
-                                                    <td className={`p-1.5 text-right font-bold ${data[item.id] !== '' ? 'text-blue-700' : 'text-gray-300'}`}>{isAmount && data[item.id] !== '' ? '$' : ''}{actualDisplay.toLocaleString()}</td>
-                                                    <td className={`p-1.5 text-right font-bold ${gapColor}`}>{gapDisplay}</td>
-                                                    <td className="p-1.5 text-right font-bold">{data[item.id] !== '' ? `${rate}%` : '-'}</td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
+                                            <div className="flex justify-between items-center mb-1 pl-2">
+                                                <span className="font-bold text-gray-700 text-[10px]">{item.name} <span className="text-gray-400 font-normal">({item.unit})</span></span>
+                                                <div className="text-right text-[9px] leading-tight">
+                                                    <div className={`font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                                        達成: {achieveRate}%
+                                                    </div>
+                                                    <div className={`font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                                        差異: {gapRate}%
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-3 gap-0.5 text-center text-[10px] pl-1.5">
+                                                <div className="bg-gray-50 rounded p-0.5">
+                                                    <div className="text-gray-400 scale-90">目標</div>
+                                                    <div className="font-semibold text-gray-700">{target}</div>
+                                                </div>
+                                                <div className="bg-blue-50 rounded p-0.5">
+                                                    <div className="text-blue-500 scale-90">實際</div>
+                                                    <div className="font-bold text-blue-700">{actual}</div>
+                                                </div>
+                                                <div className={`${isGood ? 'bg-green-50' : 'bg-red-50'} rounded p-0.5`}>
+                                                    <div className={`${isGood ? 'text-green-600' : 'text-red-500'} scale-90`}>差異</div>
+                                                    <div className={`font-bold ${isGood ? 'text-green-700' : 'text-red-600'}`}>
+                                                        {gap > 0 ? `+${gap}` : gap}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
                 );
             };
 
-            return (
-                <div className="flex flex-col h-full bg-white max-w-6xl mx-auto w-full shadow-lg">
-                    {/* 頂部導覽 */}
-                    <div className="bg-white px-3 py-2 border-b flex justify-between items-center shrink-0">
-                        <h1 className="text-xl font-bold text-gray-800"><i className="fa-solid fa-chart-line text-blue-600 mr-2"></i>中清店戰報系統</h1>
-                        <input type="date" className="border p-1 rounded text-sm bg-gray-50" value={currentDate} onChange={(e) => setCurrentDate(e.target.value)} />
+            // 新增狀態來控制「三班累加」頁面的時間範圍
+            const [summaryRange, setSummaryRange] = useState('currentMonth'); // 'single', 'currentMonth', 'lastMonth'
+
+            const renderSummary = () => {
+                const summaryData = { customers: 0, revenue: 0, atv: 0 };
+                ITEM_CONFIG.forEach(i => summaryData[i.id] = 0);
+
+                let displayTitle = "三班數據累加結算";
+
+                if (summaryRange === 'single') {
+                    displayTitle = `${selectedDate} 單日三班總和`;
+                    if (database[selectedDate]) {
+                        ['morning', 'evening', 'night'].forEach(shift => {
+                            if (database[selectedDate][shift]) {
+                                const sData = database[selectedDate][shift];
+                                summaryData.customers += Number(sData.customers) || 0;
+                                summaryData.revenue += Number(sData.revenue) || 0;
+                                ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
+                            }
+                        });
+                    }
+                } else {
+                    const today = new Date('2026-07-11'); // 使用模擬的今天日期
+                    let targetMonth, targetYear;
+                    
+                    if (summaryRange === 'currentMonth') {
+                        targetMonth = today.getMonth() + 1;
+                        targetYear = today.getFullYear();
+                        displayTitle = `${targetMonth}月 累計總和`;
+                    } else if (summaryRange === 'lastMonth') {
+                        targetMonth = today.getMonth() === 0 ? 12 : today.getMonth();
+                        targetYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+                        displayTitle = `${targetMonth}月 累計總和`;
+                    }
+
+                    const monthPrefix = `${targetYear}-${targetMonth.toString().padStart(2, '0')}`;
+
+                    // 遍歷資料庫尋找符合該月份的資料
+                    Object.keys(database).forEach(dateKey => {
+                        if (dateKey.startsWith(monthPrefix)) {
+                            ['morning', 'evening', 'night'].forEach(shift => {
+                                if (database[dateKey][shift]) {
+                                    const sData = database[dateKey][shift];
+                                    summaryData.customers += Number(sData.customers) || 0;
+                                    summaryData.revenue += Number(sData.revenue) || 0;
+                                    ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
+                                }
+                            });
+                        }
+                    });
+                }
+                
+                summaryData.atv = summaryData.customers > 0 ? Math.round(summaryData.revenue / summaryData.customers) : 0;
+
+                return (
+                    <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-4 border-b pb-2 gap-2">
+                            <h2 className="text-lg font-bold text-green-700"><i className="fa-solid fa-layer-group mr-2"></i>{displayTitle}</h2>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex bg-gray-100 rounded overflow-hidden text-xs border border-gray-200">
+                                    <button onClick={() => setSummaryRange('single')} className={`px-3 py-1.5 ${summaryRange === 'single' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>單日查詢</button>
+                                    <button onClick={() => setSummaryRange('currentMonth')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'currentMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>本月</button>
+                                    <button onClick={() => setSummaryRange('lastMonth')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'lastMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>上月</button>
+                                </div>
+                                {summaryRange === 'single' && (
+                                    <div className="flex items-center bg-green-50 p-1 rounded border border-green-200">
+                                        <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} 
+                                            className="p-1 border-none bg-transparent outline-none text-xs font-semibold text-green-800" />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4 mb-6">
+                            <div className="bg-gray-100 p-3 rounded border text-center">
+                                <div className="text-gray-600 text-xs mb-1">累加來客數</div>
+                                <div className="text-2xl font-black text-gray-800">{summaryData.customers}</div>
+                            </div>
+                            <div className="bg-gray-100 p-3 rounded border text-center">
+                                <div className="text-gray-600 text-xs mb-1">累加業績</div>
+                                <div className="text-2xl font-black text-gray-800">${summaryData.revenue.toLocaleString()}</div>
+                            </div>
+                            <div className="bg-blue-50 p-3 rounded border border-blue-200 text-center">
+                                <div className="text-blue-700 text-xs mb-1">平均客單價</div>
+                                <div className="text-2xl font-black text-blue-600">${summaryData.atv.toLocaleString()}</div>
+                            </div>
+                        </div>
+
+                        <table className="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr className="bg-gray-800 text-white">
+                                    <th className="p-2 rounded-tl">評估項目</th>
+                                    <th className="p-2 text-right">目標</th>
+                                    <th className="p-2 text-right">實際總和</th>
+                                    <th className="p-2 text-right">差異數</th>
+                                    <th className="p-2 text-right">達成率</th>
+                                    <th className="p-2 text-right rounded-tr">差異率</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {ITEM_CONFIG.map((item, index) => {
+                                    const target = calculateTarget(summaryData, item.id);
+                                    const actual = summaryData[item.id];
+                                    const { gap, achieveRate, gapRate } = calcMetrics(target, actual);
+                                    const isGood = gap >= 0;
+                                    
+                                    return (
+                                        <tr key={`sum-${item.id}`} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                            <td className="p-2 border-b font-semibold border-l">{item.name}</td>
+                                            <td className="p-2 border-b text-right text-gray-600">{target}</td>
+                                            <td className="p-2 border-b text-right font-bold text-blue-600">{actual}</td>
+                                            <td className={`p-2 border-b text-right font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                                {gap > 0 ? `+${gap}` : gap}
+                                            </td>
+                                            <td className="p-2 border-b text-right">
+                                                <span className={`px-1 rounded text-xs font-bold ${isGood ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {achieveRate}%
+                                                </span>
+                                            </td>
+                                            <td className={`p-2 border-b text-right font-bold text-xs border-r ${isGood ? 'text-green-600' : 'text-red-500'}`}>
+                                                {gapRate > 0 ? `+${gapRate}%` : `${gapRate}%`}
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                        </table>
                     </div>
+                );
+            };
 
-                    {/* 導覽列 */}
-                    <div className="flex overflow-x-auto border-b border-gray-300 bg-white shadow-sm shrink-0">
-                        <button onClick={() => setActiveTab('night')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'night' ? 'border-b-2 border-gray-800 text-gray-800 font-bold bg-gray-100' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-moon md:mr-1 block md:inline text-gray-700"></i>夜班
-                        </button>
-                        <button onClick={() => setActiveTab('morning')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'morning' ? 'border-b-2 border-orange-500 text-orange-600 font-bold bg-orange-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-sun md:mr-1 block md:inline text-orange-500"></i>早班
-                        </button>
-                        <button onClick={() => setActiveTab('evening')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'evening' ? 'border-b-2 border-indigo-500 text-indigo-600 font-bold bg-indigo-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-cloud-sun md:mr-1 block md:inline text-indigo-500"></i>晚班
-                        </button>
-                        <button onClick={() => setActiveTab('summary')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'summary' ? 'border-b-2 border-green-500 text-green-700 font-bold bg-green-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-chart-pie md:mr-1 block md:inline text-green-600"></i>累加
-                        </button>
-                        <button onClick={() => setActiveTab('audit')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'audit' ? 'border-b-2 border-red-500 text-red-700 font-bold bg-red-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-clipboard-check md:mr-1 block md:inline text-red-600"></i>稽核
-                        </button>
-                        <button onClick={() => setActiveTab('trend')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'trend' ? 'border-b-2 border-purple-500 text-purple-700 font-bold bg-purple-50' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-arrow-trend-up md:mr-1 block md:inline text-purple-600"></i>趨勢
-                        </button>
-                        <button onClick={() => setActiveTab('settings')} className={`flex-1 min-w-[70px] py-2 px-1 text-sm md:text-base whitespace-nowrap transition-colors ${activeTab === 'settings' ? 'border-b-2 border-gray-500 text-gray-700 font-bold bg-gray-100' : 'text-gray-500 hover:bg-gray-50'}`}>
-                            <i className="fa-solid fa-gear md:mr-1 block md:inline text-gray-500"></i>設定
-                        </button>
-                    </div>
+            const chartRef = useRef(null);
+            
+            const getMonthlyTrendData = () => {
+                const monthPrefix = inputDate.substring(0, 7); // e.g. '2026-07'
+                const daysInMonth = new Date(parseInt(monthPrefix.split('-')[0]), parseInt(monthPrefix.split('-')[1]), 0).getDate();
+                const sortedDates = Array.from({length: daysInMonth}, (_, i) => `${monthPrefix}-${(i+1).toString().padStart(2, '0')}`);
+                
+                const trendData = { dates: sortedDates, dailyTotals: {}, cumulative: {}, chartDatasets: [] };
+                const currentCumulative = { customers: 0, revenue: 0 };
+                ITEM_CONFIG.forEach(i => currentCumulative[i.id] = 0);
 
-                    {/* 頁籤內容區 */}
-                    <div className="flex-1 overflow-y-auto bg-gray-50">
-                        {activeTab === 'night' && renderShiftTab('night', '夜班', 'fa-moon', 'text-gray-800', 'bg-gray-800')}
-                        {activeTab === 'morning' && renderShiftTab('morning', '早班', 'fa-sun', 'text-orange-600', 'bg-orange-500')}
-                        {activeTab === 'evening' && renderShiftTab('evening', '晚班', 'fa-cloud-sun', 'text-indigo-600', 'bg-indigo-500')}
+                sortedDates.forEach(date => {
+                    let hasData = false;
+                    const dayData = { customers: 0, revenue: 0 };
+                    ITEM_CONFIG.forEach(i => dayData[i.id] = 0);
+                    
+                    const shiftsToProcess = trendFilter === 'all' ? ['morning', 'evening', 'night'] : [trendFilter];
 
-                        {/* 三班累加 */}
-                        {activeTab === 'summary' && (() => {
-                            const { summary, targetDateStr } = getSummaryData();
-                            return (
-                            <div className="tab-content p-3 h-full overflow-y-auto">
-                                <div className="bg-white p-4 rounded-lg shadow border">
-                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                        <h2 className="text-lg font-bold text-green-700"><i className="fa-solid fa-chart-pie mr-2"></i>戰報累加查詢</h2>
-                                        
-                                        <div className="flex bg-gray-100 rounded-lg p-1">
-                                            <button onClick={() => setSummaryMode('day')} className={`px-3 py-1 text-sm rounded ${summaryMode === 'day' ? 'bg-white shadow font-bold text-blue-600' : 'text-gray-500 hover:bg-gray-200'}`}>單日</button>
-                                            <button onClick={() => setSummaryMode('month')} className={`px-3 py-1 text-sm rounded ${summaryMode === 'month' ? 'bg-white shadow font-bold text-green-600' : 'text-gray-500 hover:bg-gray-200'}`}>本月累計</button>
-                                            <button onClick={() => setSummaryMode('lastMonth')} className={`px-3 py-1 text-sm rounded ${summaryMode === 'lastMonth' ? 'bg-white shadow font-bold text-purple-600' : 'text-gray-500 hover:bg-gray-200'}`}>上月累計</button>
-                                        </div>
-                                    </div>
-                                    <div className="text-center mb-4 text-sm font-bold bg-green-50 text-green-800 py-1 rounded">
-                                        目前查詢區間: {targetDateStr}
-                                    </div>
+                    if (database[date]) {
+                        shiftsToProcess.forEach(shift => {
+                            if (database[date][shift]) {
+                                const sData = database[date][shift];
+                                // 檢查是否真的有輸入數字 (不是空字串)
+                                const values = [sData.customers, sData.revenue, ...ITEM_CONFIG.map(i => sData[i.id])];
+                                if (values.some(v => v !== '' && v !== undefined && v !== null)) {
+                                    hasData = true;
+                                }
 
-                                    <div className="grid grid-cols-3 gap-2 mb-4">
-                                        <div className="bg-green-50 p-2 rounded text-center border border-green-100">
-                                            <div className="text-xs text-green-800">總來客數</div>
-                                            <div className="text-xl font-bold text-green-600">{summary.orders}</div>
-                                        </div>
-                                        <div className="bg-green-50 p-2 rounded text-center border border-green-100">
-                                            <div className="text-xs text-green-800">總業績</div>
-                                            <div className="text-xl font-bold text-green-600">${summary.revenue.toLocaleString()}</div>
-                                        </div>
-                                        <div className="bg-blue-50 p-2 rounded text-center border border-blue-100">
-                                            <div className="text-xs text-blue-800">平均客單價</div>
-                                            <div className="text-xl font-bold text-blue-600">${summary.atv.toLocaleString()}</div>
-                                        </div>
-                                    </div>
+                                dayData.customers += Number(sData.customers) || 0;
+                                dayData.revenue += Number(sData.revenue) || 0;
+                                ITEM_CONFIG.forEach(i => dayData[i.id] += Number(sData[i.id]) || 0);
+                            }
+                        });
+                    }
 
-                                    <table className="w-full text-sm border-collapse">
-                                        <thead>
-                                            <tr className="bg-gray-100 text-gray-600">
-                                                <th className="p-2 border text-left">推廣項目</th>
-                                                <th className="p-2 border text-right">目標 <span className="text-[10px] font-normal">(依總數推算)</span></th>
-                                                <th className="p-2 border text-right text-blue-600 font-bold">總實際</th>
-                                                <th className="p-2 border text-right">總差異</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {ITEM_CONFIG.map(item => {
-                                                const totalTarget = calculateTarget(summary, item.id);
-                                                const totalActual = summary[item.id];
-                                                const isAmount = item.type === 'amount';
-                                                
-                                                const gap = totalActual - totalTarget;
-                                                let gapDisplay = gap;
-                                                let gapColor = 'text-gray-500';
-                                                if (gap > 0) {
-                                                    gapDisplay = `+${gap}`;
-                                                    gapColor = 'text-green-600';
-                                                } else if (gap < 0) {
-                                                    gapColor = 'text-red-500';
-                                                }
+                    // 若沒有數據，則標記為 null 以便前端顯示空值
+                    trendData.dailyTotals[date] = hasData ? dayData : null;
+                    
+                    // 累計值只在有數據時往上疊加，但每一天都保有最新的累計紀錄
+                    if (hasData) {
+                        currentCumulative.customers += dayData.customers;
+                        currentCumulative.revenue += dayData.revenue;
+                        ITEM_CONFIG.forEach(i => currentCumulative[i.id] += dayData[i.id]);
+                    }
+                    trendData.cumulative[date] = { ...currentCumulative };
+                });
 
-                                                return (
-                                                    <tr key={item.id} className="hover:bg-gray-50 border-b">
-                                                        <td className="p-2 font-bold">{item.name}</td>
-                                                        <td className="p-2 text-right text-gray-500">{isAmount ? '$' : ''}{totalTarget.toLocaleString()}</td>
-                                                        <td className="p-2 text-right font-bold text-blue-600">{isAmount ? '$' : ''}{totalActual.toLocaleString()}</td>
-                                                        <td className={`p-2 text-right font-bold ${gapColor}`}>{gapDisplay}</td>
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
+                ITEM_CONFIG.forEach(item => {
+                    if(item.id === visibleChart) {
+                        // 若無資料回傳 null，圖表就不會畫到 0
+                        const dataPoints = sortedDates.map(date => trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : null);
+                        trendData.chartDatasets.push({
+                            label: item.name, data: dataPoints, borderColor: item.color, backgroundColor: item.color, tension: 0.3, fill: false, borderWidth: 2, pointRadius: 2, spanGaps: true
+                        });
+                    }
+                });
+                return trendData;
+            };
+
+            useEffect(() => {
+                if (activeTab !== 'trend') return;
+                const trendData = getMonthlyTrendData();
+                const ctx = document.getElementById('trendChart');
+                
+                if (ctx) {
+                    if (chartRef.current) chartRef.current.destroy();
+                    chartRef.current = new Chart(ctx, {
+                        type: 'line',
+                        data: { 
+                            labels: trendData.dates.map(d => parseInt(d.substring(8)).toString()), 
+                            datasets: trendData.chartDatasets 
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { position: 'top', labels: { boxWidth: 8, font: { size: 9 } } } },
+                            scales: { 
+                                y: { beginAtZero: true, ticks: { font: { size: 9 } } }, 
+                                x: { 
+                                    ticks: { 
+                                        font: { size: 9 },
+                                        color: function(context) {
+                                            if (context.tick && context.tick.label) {
+                                                const day = parseInt(context.tick.label);
+                                                const monthPrefix = inputDate.substring(0, 7);
+                                                const dStr = `${monthPrefix}-${day.toString().padStart(2, '0')}`.replace(/-/g, '/');
+                                                const d = new Date(dStr);
+                                                const dayOfWeek = d.getDay();
+                                                if (dayOfWeek === 0 || dayOfWeek === 6) return '#ef4444'; // 紅字標示假日
+                                            }
+                                            return '#64748b';
+                                        }
+                                    } 
+                                } 
+                            }
+                        }
+                    });
+                }
+                return () => {
+                    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+                };
+            }, [activeTab, database, trendFilter, settings, visibleChart, inputDate]);
+
+            const renderTrendTab = () => {
+                const trendData = getMonthlyTrendData();
+                const dates = trendData.dates;
+                const todayData = dates.find(d => d === '2026-07-11');
+                const latestCumulative = todayData ? trendData.cumulative['2026-07-11'] : null;
+
+                return (
+                    <div className="flex flex-col h-full gap-1.5 text-sm overflow-y-auto hide-scroll pb-2">
+                        {/* 頂部控制與總結 */}
+                        <div className="bg-white p-1.5 rounded shadow border border-purple-200 shrink-0">
+                            <div className="flex justify-between items-center mb-1">
+                                <h2 className="text-sm font-bold text-purple-800">
+                                    <i className="fa-solid fa-calendar-check mr-1"></i>本月累計 (至 7/11)
+                                </h2>
+                                <div className="flex bg-gray-100 rounded overflow-hidden text-[10px]">
+                                    {['all', 'morning', 'evening', 'night'].map(f => (
+                                        <button key={f} onClick={() => setTrendFilter(f)} 
+                                            className={`px-2 py-0.5 ${trendFilter === f ? 'bg-purple-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>
+                                            {f === 'all' ? '全部累計' : f === 'morning' ? '早班' : f === 'evening' ? '晚班' : '夜班'}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
-                            );
-                        })()}
+                            
+                            {latestCumulative && (
+                                <div className="grid grid-cols-6 gap-1">
+                                    {ITEM_CONFIG.map(item => {
+                                        const totalTarget = calculateTarget(latestCumulative, item.id);
+                                        const totalActual = latestCumulative[item.id];
+                                        const { gap, achieveRate, gapRate } = calcMetrics(totalTarget, totalActual);
+                                        const isGood = gap >= 0;
 
-                        {/* 店長稽核 */}
-                        {activeTab === 'audit' && (() => {
-                            const auditItems = [
-                                { id: 'orders', name: '總來客數', isAmount: false },
-                                { id: 'revenue', name: '總業績', isAmount: true },
-                                ...ITEM_CONFIG.map(i => ({ id: i.id, name: i.name, isAmount: i.type === 'amount' }))
-                            ];
+                                        return (
+                                            <div key={`cumul-${item.id}`} className="bg-purple-50 p-1 rounded border border-purple-100 text-center flex flex-col justify-between">
+                                                <div className="font-bold text-gray-700 text-[10px]">{item.name}</div>
+                                                <div className="text-[9px] text-gray-500">目標: {totalTarget}</div>
+                                                <div className="text-xs font-black text-purple-700">{totalActual}</div>
+                                                <div className={`text-[9px] font-bold ${isGood ? 'text-green-600' : 'text-red-500'} leading-tight scale-90`}>
+                                                    達成:{achieveRate}%<br/>差異:{gapRate > 0 ? `+${gapRate}%` : `${gapRate}%`}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
 
-                            // 取得三班系統加總
-                            const getSystemSum = (fieldId) => {
-                                return ['morning', 'evening', 'night'].reduce((acc, shift) => {
-                                    return acc + (Number(currentDayData[shift]?.[fieldId]) || 0);
-                                }, 0);
-                            };
-
-                            const managerData = currentDayData.manager;
-
-                            return (
-                            <div className="tab-content p-3 h-full overflow-y-auto">
-                                <div className="bg-white p-4 rounded-lg shadow border max-w-3xl mx-auto">
-                                    <div className="flex justify-between items-center mb-4 border-b pb-2">
-                                        <h2 className="text-lg font-bold text-red-700"><i className="fa-solid fa-clipboard-check mr-2"></i>店長日結稽核</h2>
-                                        <div className="text-sm font-bold bg-gray-100 px-3 py-1 rounded">稽核日期: {currentDate}</div>
-                                    </div>
-                                    
-                                    <p className="text-xs text-gray-500 mb-4 bg-red-50 p-2 rounded border border-red-100">
-                                        <i className="fa-solid fa-circle-info mr-1"></i>
-                                        請於此處填入「今日整天真實結帳資料」。系統會自動比對各班輸入的總和，若「誤差」欄位出現非 0 的紅字，代表三班人員輸入的數字有誤或漏 KEY。
-                                    </p>
-
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm border-collapse">
-                                            <thead>
-                                                <tr className="bg-gray-100 text-gray-700">
-                                                    <th className="p-2 border text-left w-1/4">稽核項目</th>
-                                                    <th className="p-2 border text-right w-1/4">三班系統加總 <span className="text-[10px] font-normal block text-gray-500">(自動計算)</span></th>
-                                                    <th className="p-2 border text-center w-1/4 bg-red-50 text-red-700">店長實際日結 <span className="text-[10px] font-normal block">(請輸入)</span></th>
-                                                    <th className="p-2 border text-right w-1/4">整天差異數 <span className="text-[10px] font-normal block text-gray-500">(實際 - 系統)</span></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {auditItems.map(item => {
-                                                    const sysSum = getSystemSum(item.id);
-                                                    const managerVal = managerData[item.id];
-                                                    const hasInput = managerVal !== '';
-                                                    const managerNum = Number(managerVal) || 0;
-                                                    
-                                                    // 計算誤差: 店長輸入 - 系統加總
-                                                    const diff = hasInput ? managerNum - sysSum : null;
-                                                    let diffDisplay = '-';
-                                                    let diffColor = 'text-gray-300';
-                                                    
-                                                    if (hasInput) {
-                                                        if (diff === 0) {
-                                                            diffDisplay = '0 (相符)';
-                                                            diffColor = 'text-green-600 bg-green-50';
-                                                        } else {
-                                                            diffDisplay = diff > 0 ? `+${diff}` : diff;
-                                                            diffColor = 'text-red-600 bg-red-50 font-bold';
-                                                        }
-                                                    }
-
+                        {/* 下半部：明細與圖表 */}
+                        <div className="flex flex-col flex-1 gap-1.5">
+                            {/* 橫向資料表 */}
+                            <div className="bg-white rounded shadow border border-gray-200 overflow-hidden flex flex-col shrink-0">
+                                <h3 className="font-bold text-gray-700 p-1 bg-gray-50 border-b text-xs"><i className="fa-solid fa-table mr-1"></i>每日總計明細 (7月)</h3>
+                                <div className="overflow-x-auto hide-scroll p-1 w-full">
+                                    <table className="w-full text-center border-collapse text-[10px]">
+                                        <thead>
+                                            <tr>
+                                                <th className="p-0.5 px-1 bg-gray-800 text-white border sticky left-0 z-10 min-w-[50px]">項目 \ 日期</th>
+                                                {dates.map(date => {
+                                                    const day = parseInt(date.substring(8));
+                                                    const d = new Date(date.replace(/-/g, '/'));
+                                                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
                                                     return (
-                                                        <tr key={item.id} className="border-b hover:bg-gray-50">
-                                                            <td className="p-2 font-bold text-gray-700">{item.name}</td>
-                                                            <td className="p-2 text-right text-gray-500 bg-gray-50">
-                                                                {item.isAmount ? '$' : ''}{sysSum.toLocaleString()}
-                                                            </td>
-                                                            <td className="p-1 text-center bg-red-50/30">
-                                                                <input type="number" 
-                                                                    className="w-full max-w-[100px] p-1.5 border border-red-300 rounded text-right text-sm text-red-800 font-bold bg-white focus:ring-2 focus:ring-red-200 outline-none" 
-                                                                    value={managerVal} 
-                                                                    onChange={(e) => handleShiftChange('manager', item.id, e.target.value)} 
-                                                                    placeholder="請輸入..." />
-                                                            </td>
-                                                            <td className={`p-2 text-right ${diffColor}`}>
-                                                                {item.isAmount && hasInput && diff !== 0 ? '$' : ''}{hasInput && diff !== 0 ? diff.toLocaleString() : diffDisplay}
-                                                            </td>
-                                                        </tr>
+                                                        <th key={date} className={`p-0.5 border min-w-[22px] ${isWeekend ? 'text-red-500 bg-red-50' : 'bg-gray-100'}`}>
+                                                            {day}
+                                                        </th>
                                                     )
                                                 })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="mt-3 text-xs text-gray-400 text-right">
-                                        {isSaving ? <><i className="fa-solid fa-spinner fa-spin mr-1"></i> 儲存中...</> : <><i className="fa-solid fa-cloud-check mr-1 text-green-500"></i> 已雲端同步</>}
-                                    </div>
-                                </div>
-                            </div>
-                            );
-                        })()}
-
-                        {/* 趨勢圖表 */}
-                        {activeTab === 'trend' && (
-                            <div className="tab-content p-3 h-full overflow-y-auto flex flex-col">
-                                <div className="bg-white p-3 rounded-lg shadow border mb-3 shrink-0">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h2 className="text-md font-bold text-purple-700"><i className="fa-solid fa-table mr-2"></i>每日總計明細 <span className="text-xs text-gray-500 font-normal ml-1">(至 {trendMonth.split('-')[1]}/{currentDate.split('-')[2]})</span></h2>
-                                        <div className="flex gap-2">
-                                            <input type="month" className="border p-1 rounded text-sm bg-gray-50" value={trendMonth} onChange={(e) => setTrendMonth(e.target.value)} />
-                                            <select className="border p-1 rounded text-sm bg-white" value={trendShiftFilter} onChange={(e) => setTrendShiftFilter(e.target.value)}>
-                                                <option value="all">全部累計</option>
-                                                <option value="night">夜班</option>
-                                                <option value="morning">早班</option>
-                                                <option value="evening">晚班</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="overflow-x-auto w-full">
-                                        <table className="text-xs border-collapse w-full">
-                                            <thead>
-                                                <tr className="bg-gray-100">
-                                                    <th className="p-1 border sticky left-0 bg-gray-100 z-10 w-16">日期</th>
-                                                    {Array.from({length: getDaysInMonth(trendMonth)}, (_, i) => {
-                                                        const isHol = isWeekend(trendMonth, i+1);
-                                                        return <th key={i} className={`p-1 border min-w-[25px] text-center ${isHol ? 'text-red-500 bg-red-50' : 'text-gray-600'}`}>{i+1}</th>
-                                                    })}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {ITEM_CONFIG.map(item => (
-                                                    <tr key={item.id} className="hover:bg-gray-50">
-                                                        <td className="p-1 border font-bold text-gray-700 sticky left-0 bg-white z-10">{item.name}</td>
-                                                        {Array.from({length: getDaysInMonth(trendMonth)}, (_, i) => {
-                                                            const dateStr = `${trendMonth}-${String(i + 1).padStart(2, '0')}`;
-                                                            const dayData = dailyRecords[dateStr];
-                                                            const isHol = isWeekend(trendMonth, i+1);
-                                                            let val = ''; 
-                                                            
-                                                            if (dayData) {
-                                                                if (trendShiftFilter === 'all') {
-                                                                    let sum = 0;
-                                                                    let hasData = false;
-                                                                    ['night', 'morning', 'evening'].forEach(s => {
-                                                                        if(dayData[s] && dayData[s][item.id] !== '') {
-                                                                            sum += Number(dayData[s][item.id]);
-                                                                            hasData = true;
-                                                                        }
-                                                                    });
-                                                                    if(hasData) val = sum;
-                                                                } else if(dayData[trendShiftFilter] && dayData[trendShiftFilter][item.id] !== '') {
-                                                                    val = Number(dayData[trendShiftFilter][item.id]);
-                                                                }
-                                                            }
-                                                            return <td key={i} className={`p-1 border text-center ${isHol ? 'bg-red-50/30' : ''} ${val !== '' ? 'font-semibold text-blue-600' : 'text-gray-300'}`}>{val}</td>
-                                                        })}
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white p-3 rounded-lg shadow border flex-1 min-h-[250px] shrink-0 flex flex-col">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h2 className="text-md font-bold text-gray-700"><i className="fa-solid fa-chart-line mr-2"></i>趨勢折線圖</h2>
-                                        <div className="flex flex-wrap gap-2 text-xs">
-                                            {ITEM_CONFIG.map(item => (
-                                                <label key={item.id} className={`flex items-center cursor-pointer p-1 border rounded ${chartTargetItem === item.id ? 'bg-blue-50 border-blue-300 font-bold' : 'bg-gray-50 hover:bg-gray-100'}`}>
-                                                    <input 
-                                                        type="radio" 
-                                                        name="chartTarget"
-                                                        value={item.id} 
-                                                        checked={chartTargetItem === item.id}
-                                                        onChange={(e) => setChartTargetItem(e.target.value)} 
-                                                        className="mr-1"
-                                                    />
-                                                    <span style={{color: item.color}}>{item.name}</span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="relative flex-1 w-full h-full">
-                                        <canvas id="trendChart"></canvas>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 店長設定 */}
-                        {activeTab === 'settings' && (
-                            <div className="tab-content p-4 h-full overflow-y-auto">
-                                <div className="bg-white p-5 rounded-lg shadow border max-w-2xl mx-auto">
-                                    <h2 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2"><i className="fa-solid fa-sliders mr-2"></i>系統參數設定 <span className="text-xs font-normal text-gray-500">(雲端同步)</span></h2>
-                                    
-                                    <table className="w-full text-sm border-collapse mb-6">
-                                        <thead>
-                                            <tr className="bg-gray-100">
-                                                <th className="p-2 border text-left">推廣項目</th>
-                                                <th className="p-2 border text-center">目標設定 (%)</th>
-                                                <th className="p-2 border text-center">達成配分</th>
                                             </tr>
                                         </thead>
                                         <tbody>
+                                            <tr>
+                                                <td className="p-0.5 bg-gray-50 font-bold border sticky left-0 z-10 text-left pl-1">來客數</td>
+                                                {dates.map(date => <td key={`cust-${date}`} className="p-0.5 border text-gray-700">
+                                                    {trendData.dailyTotals[date] ? trendData.dailyTotals[date].customers : ''}
+                                                </td>)}
+                                            </tr>
                                             {ITEM_CONFIG.map(item => (
-                                                <tr key={item.id} className="border-b">
-                                                    <td className="p-2 font-bold text-gray-700">{item.name}</td>
-                                                    <td className="p-2 text-center">
-                                                        <input type="number" className="w-16 p-1 border rounded text-center bg-gray-50" 
-                                                            value={settings.rates[item.id]} onChange={(e) => handleSettingChange('rates', item.id, e.target.value)} /> %
-                                                    </td>
-                                                    <td className="p-2 text-center">
-                                                        <input type="number" className="w-16 p-1 border rounded text-center bg-gray-50" 
-                                                            value={settings.scores[item.id]} onChange={(e) => handleSettingChange('scores', item.id, e.target.value)} /> 分
-                                                    </td>
+                                                <tr key={`row-${item.id}`}>
+                                                    <td className="p-0.5 bg-white font-semibold border sticky left-0 z-10 text-left pl-1" style={{color: item.color}}>{item.name}</td>
+                                                    {dates.map(date => <td key={`${item.id}-${date}`} className="p-0.5 border text-gray-700">
+                                                        {trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : ''}
+                                                    </td>)}
                                                 </tr>
                                             ))}
                                         </tbody>
                                     </table>
-
-                                    <div className="bg-gray-50 p-4 rounded border">
-                                        <label className="block text-sm font-bold text-gray-700 mb-2">基礎營運分數 (預設55分)</label>
-                                        <p className="text-xs text-gray-500 mb-2">此分數加上上方各項達成配分，用於計算是否達到門店及格標準(65分)。</p>
-                                        <input type="number" className="w-24 p-2 border rounded text-center bg-white" 
-                                            value={settings.baseScore} onChange={(e) => handleSettingChange('baseScore', 'value', e.target.value)} />
-                                    </div>
                                 </div>
                             </div>
-                        )}
+
+                            {/* 圖表 */}
+                            <div className="bg-white p-1 rounded shadow border border-gray-200 flex flex-col min-h-[250px] shrink-0">
+                                <div className="flex flex-wrap gap-2 mb-1 px-1 justify-center border-b pb-1">
+                                    {ITEM_CONFIG.map(item => (
+                                        <label key={`rad-${item.id}`} className="flex items-center text-[10px] cursor-pointer">
+                                            <input type="radio" checked={visibleChart === item.id}
+                                                onChange={() => setVisibleChart(item.id)} className="mr-0.5" />
+                                            <span style={{color: item.color}} className="font-bold">{item.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="relative flex-1 w-full">
+                                    <canvas id="trendChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
                     </div>
+                );
+            };
+
+            const renderSettings = () => (
+                <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
+                    <h2 className="text-lg font-bold text-gray-800 mb-4"><i className="fa-solid fa-gear mr-2 text-gray-500"></i>店長各項指標設定</h2>
+                    <p className="text-xs text-gray-500 mb-4">在此設定各項目的目標轉換率(%)與配分。設定後將連動全系統的目標計算。</p>
+                    
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th className="p-2 border">指標項目</th>
+                                    <th className="p-2 border">計算基準</th>
+                                    <th className="p-2 border">目標佔比 (%)</th>
+                                    <th className="p-2 border">配分 (滿分)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {ITEM_CONFIG.map(item => (
+                                    <tr key={item.id} className="hover:bg-gray-50">
+                                        <td className="p-2 border font-semibold">{item.name}</td>
+                                        <td className="p-2 border text-gray-500 text-xs">{item.type === 'amount' ? '當班業績' : '當班來客數'}</td>
+                                        <td className="p-2 border">
+                                            <div className="flex items-center">
+                                                <input type="number" className="p-1 border rounded w-20 text-center" 
+                                                    value={settings[item.id]?.rate !== undefined ? settings[item.id].rate : ''} 
+                                                    onChange={(e) => handleSettingChange(item.id, 'rate', e.target.value)} />
+                                                <span className="ml-1 text-gray-500">%</span>
+                                            </div>
+                                        </td>
+                                        <td className="p-2 border">
+                                            <div className="flex items-center">
+                                                <input type="number" className="p-1 border rounded w-20 text-center" 
+                                                    value={settings[item.id]?.score !== undefined ? settings[item.id].score : ''} 
+                                                    onChange={(e) => handleSettingChange(item.id, 'score', e.target.value)} />
+                                                <span className="ml-1 text-gray-500">分</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex flex-col h-full max-w-7xl mx-auto bg-gray-100">
+                    <header className="px-4 py-2 border-b bg-white flex justify-between items-center shrink-0 shadow-sm">
+                        <h1 className="text-xl font-black text-gray-800 tracking-tight">
+                            中清店12生肖戰報
+                        </h1>
+                    </header>
+
+                    <nav className="flex overflow-x-auto border-b bg-white shrink-0 hide-scroll text-sm">
+                        <button onClick={() => setActiveTab('morning')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'morning' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-sun mr-1 text-orange-500"></i>早班
+                        </button>
+                        <button onClick={() => setActiveTab('evening')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'evening' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-cloud-sun mr-1 text-indigo-500"></i>晚班
+                        </button>
+                        <button onClick={() => setActiveTab('night')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'night' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-moon mr-1 text-gray-700"></i>夜班
+                        </button>
+                        <button onClick={() => setActiveTab('summary')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'summary' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-layer-group mr-1 text-green-600"></i>三班累加
+                        </button>
+                        <button onClick={() => setActiveTab('trend')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'trend' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-chart-line mr-1 text-purple-600"></i>趨勢圖表
+                        </button>
+                        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'settings' ? 'tab-active' : 'tab-inactive'}`}>
+                            <i className="fa-solid fa-gear mr-1 text-gray-500"></i>店長設定
+                        </button>
+                    </nav>
+
+                    <main className="flex-1 overflow-hidden p-2">
+                        {activeTab === 'morning' && renderShiftTab('morning', '早班', 'fa-sun', 'text-orange-600', 'bg-orange-500')}
+                        {activeTab === 'evening' && renderShiftTab('evening', '晚班', 'fa-cloud-sun', 'text-indigo-600', 'bg-indigo-500')}
+                        {activeTab === 'night' && renderShiftTab('night', '夜班', 'fa-moon', 'text-gray-800', 'bg-gray-800')}
+                        {activeTab === 'summary' && renderSummary()}
+                        {activeTab === 'trend' && renderTrendTab()}
+                        {activeTab === 'settings' && renderSettings()}
+                    </main>
                 </div>
             );
         }
