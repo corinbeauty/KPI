@@ -95,7 +95,11 @@
             // 預設開啟夜班
             const [activeTab, setActiveTab] = useState('night');
             
-            const todayStr = '2026-07-11';
+            const getTodayStr = () => {
+                const today = new Date();
+                return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            };
+            const todayStr = getTodayStr();
             const [selectedDate, setSelectedDate] = useState(todayStr); 
             const [inputDate, setInputDate] = useState(todayStr);       
             const [database, setDatabase] = useState({});
@@ -341,6 +345,8 @@
 
             // 2. 三班累加結算
             const [summaryRange, setSummaryRange] = useState('currentMonth');
+            const [summaryRangeStart, setSummaryRangeStart] = useState(getTodayStr().substring(0, 8) + '01');
+            const [summaryRangeEnd, setSummaryRangeEnd] = useState(getTodayStr());
 
             const renderSummary = () => {
                 const summaryData = { customers: 0, revenue: 0, atv: 0 };
@@ -360,8 +366,22 @@
                             }
                         });
                     }
+                } else if (summaryRange === 'customRange') {
+                    displayTitle = `${summaryRangeStart} 至 ${summaryRangeEnd} 累加總和`;
+                    Object.keys(database).forEach(dateKey => {
+                        if (dateKey >= summaryRangeStart && dateKey <= summaryRangeEnd) {
+                            ['morning', 'evening', 'night'].forEach(shift => {
+                                if (database[dateKey][shift]) {
+                                    const sData = database[dateKey][shift];
+                                    summaryData.customers += Number(sData.customers) || 0;
+                                    summaryData.revenue += Number(sData.revenue) || 0;
+                                    ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
+                                }
+                            });
+                        }
+                    });
                 } else {
-                    const today = new Date('2026-07-11');
+                    const today = new Date();
                     let targetMonth, targetYear;
                     
                     if (summaryRange === 'currentMonth') {
@@ -399,12 +419,22 @@
                             <div className="flex flex-wrap items-center gap-2">
                                 <div className="flex bg-gray-100 rounded overflow-hidden text-xs border border-gray-200">
                                     <button onClick={() => setSummaryRange('single')} className={`px-3 py-1.5 ${summaryRange === 'single' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>單日查詢</button>
+                                    <button onClick={() => setSummaryRange('customRange')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'customRange' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>自訂區間</button>
                                     <button onClick={() => setSummaryRange('currentMonth')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'currentMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>本月</button>
                                     <button onClick={() => setSummaryRange('lastMonth')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'lastMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>上月</button>
                                 </div>
                                 {summaryRange === 'single' && (
                                     <div className="flex items-center bg-green-50 p-1 rounded border border-green-200">
                                         <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} 
+                                            className="p-1 border-none bg-transparent outline-none text-xs font-semibold text-green-800" />
+                                    </div>
+                                )}
+                                {summaryRange === 'customRange' && (
+                                    <div className="flex items-center bg-green-50 p-1 rounded border border-green-200 gap-1">
+                                        <input type="date" value={summaryRangeStart} onChange={(e) => setSummaryRangeStart(e.target.value)} 
+                                            className="p-1 border-none bg-transparent outline-none text-xs font-semibold text-green-800" />
+                                        <span className="text-gray-500 text-[10px]">至</span>
+                                        <input type="date" value={summaryRangeEnd} onChange={(e) => setSummaryRangeEnd(e.target.value)} 
                                             className="p-1 border-none bg-transparent outline-none text-xs font-semibold text-green-800" />
                                     </div>
                                 )}
