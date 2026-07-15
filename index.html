@@ -347,68 +347,81 @@
             const [summaryRange, setSummaryRange] = useState('currentMonth');
             const [summaryRangeStart, setSummaryRangeStart] = useState(getTodayStr().substring(0, 8) + '01');
             const [summaryRangeEnd, setSummaryRangeEnd] = useState(getTodayStr());
+            const [summaryWeek, setSummaryWeek] = useState(() => {
+                const d = new Date();
+                d.setHours(0, 0, 0, 0);
+                d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+                const yearStart = new Date(d.getFullYear(), 0, 1);
+                const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+                return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+            });
 
             const renderSummary = () => {
                 const summaryData = { customers: 0, revenue: 0, atv: 0 };
                 ITEM_CONFIG.forEach(i => summaryData[i.id] = 0);
 
                 let displayTitle = "三班數據累加結算";
+                let calcKeys = [];
+
+                const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
                 if (summaryRange === 'single') {
-                    displayTitle = `${selectedDate} 單日三班總和`;
-                    if (database[selectedDate]) {
+                    displayTitle = `${selectedDate} 單日查詢`;
+                    calcKeys = [selectedDate];
+                } else if (summaryRange === 'customRange') {
+                    displayTitle = `${summaryRangeStart} 至 ${summaryRangeEnd} 累加`;
+                    calcKeys = Object.keys(database).filter(k => k >= summaryRangeStart && k <= summaryRangeEnd);
+                } else if (summaryRange === 'currentMonth' || summaryRange === 'lastMonth') {
+                    const today = new Date();
+                    let targetMonth = summaryRange === 'currentMonth' ? today.getMonth() + 1 : today.getMonth();
+                    let targetYear = today.getFullYear();
+                    if (targetMonth === 0) {
+                        targetMonth = 12;
+                        targetYear -= 1;
+                    }
+                    displayTitle = `${targetMonth}月 累計總和`;
+                    const prefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+                    calcKeys = Object.keys(database).filter(k => k.startsWith(prefix));
+                } else if (['currentWeek', 'lastWeek', 'customWeek'].includes(summaryRange)) {
+                    let mon, sun;
+                    if (summaryRange === 'currentWeek' || summaryRange === 'lastWeek') {
+                        const d = new Date();
+                        if (summaryRange === 'lastWeek') d.setDate(d.getDate() - 7);
+                        const day = d.getDay() || 7; // 將週日(0)轉為7，週一為1
+                        mon = new Date(d); mon.setDate(d.getDate() - day + 1);
+                        sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+                        displayTitle = summaryRange === 'currentWeek' ? `本週 (${fmtDate(mon).substring(5)}~${fmtDate(sun).substring(5)})` : `上週 (${fmtDate(mon).substring(5)}~${fmtDate(sun).substring(5)})`;
+                    } else {
+                        if (summaryWeek) {
+                            const parts = summaryWeek.split('-W');
+                            const year = parseInt(parts[0], 10);
+                            const week = parseInt(parts[1], 10);
+                            const jan4 = new Date(year, 0, 4);
+                            const day = jan4.getDay() || 7;
+                            mon = new Date(year, 0, 4 - day + 1 + (week - 1) * 7);
+                            sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+                            displayTitle = `指定週 (${fmtDate(mon).substring(5)}~${fmtDate(sun).substring(5)})`;
+                        }
+                    }
+                    if (mon && sun) {
+                        const sStart = fmtDate(mon);
+                        const sEnd = fmtDate(sun);
+                        calcKeys = Object.keys(database).filter(k => k >= sStart && k <= sEnd);
+                    }
+                }
+
+                calcKeys.forEach(dateKey => {
+                    if (database[dateKey]) {
                         ['morning', 'evening', 'night'].forEach(shift => {
-                            if (database[selectedDate][shift]) {
-                                const sData = database[selectedDate][shift];
+                            if (database[dateKey][shift]) {
+                                const sData = database[dateKey][shift];
                                 summaryData.customers += Number(sData.customers) || 0;
                                 summaryData.revenue += Number(sData.revenue) || 0;
                                 ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
                             }
                         });
                     }
-                } else if (summaryRange === 'customRange') {
-                    displayTitle = `${summaryRangeStart} 至 ${summaryRangeEnd} 累加總和`;
-                    Object.keys(database).forEach(dateKey => {
-                        if (dateKey >= summaryRangeStart && dateKey <= summaryRangeEnd) {
-                            ['morning', 'evening', 'night'].forEach(shift => {
-                                if (database[dateKey][shift]) {
-                                    const sData = database[dateKey][shift];
-                                    summaryData.customers += Number(sData.customers) || 0;
-                                    summaryData.revenue += Number(sData.revenue) || 0;
-                                    ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
-                                }
-                            });
-                        }
-                    });
-                } else {
-                    const today = new Date();
-                    let targetMonth, targetYear;
-                    
-                    if (summaryRange === 'currentMonth') {
-                        targetMonth = today.getMonth() + 1;
-                        targetYear = today.getFullYear();
-                        displayTitle = `${targetMonth}月 累計總和`;
-                    } else if (summaryRange === 'lastMonth') {
-                        targetMonth = today.getMonth() === 0 ? 12 : today.getMonth();
-                        targetYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-                        displayTitle = `${targetMonth}月 累計總和`;
-                    }
-
-                    const monthPrefix = `${targetYear}-${targetMonth.toString().padStart(2, '0')}`;
-
-                    Object.keys(database).forEach(dateKey => {
-                        if (dateKey.startsWith(monthPrefix)) {
-                            ['morning', 'evening', 'night'].forEach(shift => {
-                                if (database[dateKey][shift]) {
-                                    const sData = database[dateKey][shift];
-                                    summaryData.customers += Number(sData.customers) || 0;
-                                    summaryData.revenue += Number(sData.revenue) || 0;
-                                    ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
-                                }
-                            });
-                        }
-                    });
-                }
+                });
                 
                 summaryData.atv = summaryData.customers > 0 ? Math.round(summaryData.revenue / summaryData.customers) : 0;
 
@@ -417,15 +430,24 @@
                         <div className="flex flex-col md:flex-row justify-between items-center mb-4 border-b pb-2 gap-2">
                             <h2 className="text-lg font-bold text-green-700"><i className="fa-solid fa-layer-group mr-2"></i>{displayTitle}</h2>
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex bg-gray-100 rounded overflow-hidden text-xs border border-gray-200">
-                                    <button onClick={() => setSummaryRange('single')} className={`px-3 py-1.5 ${summaryRange === 'single' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>單日查詢</button>
-                                    <button onClick={() => setSummaryRange('customRange')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'customRange' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>自訂區間</button>
-                                    <button onClick={() => setSummaryRange('currentMonth')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'currentMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>本月</button>
-                                    <button onClick={() => setSummaryRange('lastMonth')} className={`px-3 py-1.5 border-l border-gray-200 ${summaryRange === 'lastMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>上月</button>
+                                <div className="flex bg-gray-100 rounded overflow-hidden text-xs border border-gray-200 flex-wrap">
+                                    <button onClick={() => setSummaryRange('single')} className={`px-2 py-1.5 ${summaryRange === 'single' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>單日</button>
+                                    <button onClick={() => setSummaryRange('currentWeek')} className={`px-2 py-1.5 border-l border-gray-200 ${summaryRange === 'currentWeek' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>本週</button>
+                                    <button onClick={() => setSummaryRange('lastWeek')} className={`px-2 py-1.5 border-l border-gray-200 ${summaryRange === 'lastWeek' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>上週</button>
+                                    <button onClick={() => setSummaryRange('customWeek')} className={`px-2 py-1.5 border-l border-gray-200 ${summaryRange === 'customWeek' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>指定週</button>
+                                    <button onClick={() => setSummaryRange('currentMonth')} className={`px-2 py-1.5 border-l border-gray-200 ${summaryRange === 'currentMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>本月</button>
+                                    <button onClick={() => setSummaryRange('lastMonth')} className={`px-2 py-1.5 border-l border-gray-200 ${summaryRange === 'lastMonth' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>上月</button>
+                                    <button onClick={() => setSummaryRange('customRange')} className={`px-2 py-1.5 border-l border-gray-200 ${summaryRange === 'customRange' ? 'bg-green-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>自訂</button>
                                 </div>
                                 {summaryRange === 'single' && (
                                     <div className="flex items-center bg-green-50 p-1 rounded border border-green-200">
                                         <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} 
+                                            className="p-1 border-none bg-transparent outline-none text-xs font-semibold text-green-800" />
+                                    </div>
+                                )}
+                                {summaryRange === 'customWeek' && (
+                                    <div className="flex items-center bg-green-50 p-1 rounded border border-green-200">
+                                        <input type="week" value={summaryWeek} onChange={(e) => setSummaryWeek(e.target.value)} 
                                             className="p-1 border-none bg-transparent outline-none text-xs font-semibold text-green-800" />
                                     </div>
                                 )}
