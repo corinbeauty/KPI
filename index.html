@@ -9,7 +9,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyB6XN-DEpUi4L9jETKpZWZhVrQw7tV4M5E",
@@ -25,8 +25,10 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        window.fb = { app, db, auth, doc, setDoc, onSnapshot, collection, signInAnonymously, onAuthStateChanged };
-        window.dispatchEvent(new Event('firebase-ready'));
+        window.fb = { app, db, auth, doc, setDoc, onSnapshot, collection, signInAnonymously, signInWithCustomToken, onAuthStateChanged };
+        setTimeout(() => {
+            window.dispatchEvent(new Event('firebase-ready'));
+        }, 300);
     </script>
 
     <!-- React & Babel -->
@@ -49,19 +51,51 @@
         .tab-inactive { color: #64748b; }
         .tab-inactive:hover { background-color: #e2e8f0; color: #334155; }
         input[type="number"], input[type="date"], input[type="month"] { text-align: right; }
+        input[type="radio"], input[type="checkbox"] { cursor: pointer; transform: scale(1.2); }
         
         input[type="number"]::-webkit-outer-spin-button,
         input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         input[type="number"] { -moz-appearance: textfield; }
 
-        .screenshot-area { background: white; }
-        
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* HR Forms 100% Replica Styles */
+        .hr-form-container { width: 100%; max-width: 900px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); font-family: "Microsoft JhengHei", "PingFang TC", sans-serif; }
+        .hr-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: center; }
+        .hr-table th, .hr-table td { border: 1px solid #94a3b8; padding: 6px 4px; }
+        
+        .checkbox-group { display: flex; align-items: center; justify-content: flex-start; gap: 0.5rem; cursor: pointer; text-align: left; }
+        
+        .sign-box { border: 1px dashed #94a3b8; border-radius: 4px; min-height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; color: #94a3b8; font-size: 0.75rem; overflow: hidden; width: 100%; }
+        .sign-box:hover { background-color: #f1f5f9; border-color: #3b82f6; color: #3b82f6; }
+        .sign-img { width: 100%; height: 100%; object-fit: contain; }
+
+        /* PDF 預覽 / 列印模式 (A4 尺寸) */
+        body.pdf-mode { background-color: #525659 !important; overflow: auto !important; height: auto !important; }
+        body.pdf-mode #root { height: auto !important; overflow: visible !important; }
+        body.pdf-mode .fullscreen-container { height: auto !important; overflow: visible !important; display: block !important; padding: 20px 0; }
+        body.pdf-mode .hide-in-fullscreen { display: none !important; }
+        body.pdf-mode .hr-form-container { 
+            width: 100%;
+            max-width: 210mm; /* A4 寬度 */
+            min-height: 297mm; /* A4 高度 */
+            margin: 0 auto; 
+            background: white; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+            border: none;
+        }
+
+        @media print {
+            body, body.pdf-mode { background: white !important; padding: 0 !important; }
+            .fullscreen-container { padding: 0 !important; }
+            .hr-form-container, body.pdf-mode .hr-form-container { width: 100% !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; }
+            .no-print { display: none !important; }
+        }
     </style>
 </head>
 <body>
@@ -79,12 +113,31 @@
             { id: 'app', name: '會員APP', type: 'count', unit: '單數', defaultRate: 6, defaultScore: 5, color: 'rgb(167, 139, 250)' }
         ];
 
-        // 預設時段 (若資料庫無設定時使用)
         const DEFAULT_TIME_SLOTS = [
             { id: 'ts_00_08', label: '00-08 時段' },
             { id: 'ts_08_16', label: '08-16 時段' },
             { id: 'ts_12_21', label: '12-21 時段' },
             { id: 'ts_15_00', label: '15-00 時段' }
+        ];
+
+        const PILOT_ITEMS = [
+            { phase: '配對階段\n(報到當週)', no: 1, item: '指定領航員', desc: '已指派合適領航員並告知雙方職責', std: '報到當日完成配對' },
+            { phase: '配對階段\n(報到當週)', no: 2, item: '新人資料建檔', desc: '新人基本資料建立完整並上系統', std: '報到當日完成建檔' },
+            { phase: '配對階段\n(報到當週)', no: 3, item: '領航員訓練', desc: '領航員已接受職責說明與輔導技巧訓練', std: '報到後3天內完成' },
+            { phase: '配對階段\n(報到當週)', no: 4, item: '30天培育計畫', desc: '已與新人共同訂定30天學習計畫', std: '報到後7天內完成' },
+            { phase: '30天階段\n(第1個月)', no: 5, item: '每週訪談紀錄', desc: '每週至少1次關懷訪談並填寫紀錄表', std: '每週完成' },
+            { phase: '30天階段\n(第1個月)', no: 6, item: '技術訓練進度', desc: '技術項目依計畫完成練習與考核', std: '完成率達80%以上' },
+            { phase: '30天階段\n(第1個月)', no: 7, item: '服務流程熟悉', desc: '熟悉門店服務流程與話術標準', std: '完成率達80%以上' },
+            { phase: '30天階段\n(第1個月)', no: 8, item: '30天評估', desc: '完成30天學習評估並回饋改善建議', std: '第30天前完成評估' },
+            { phase: '60天階段\n(第2個月)', no: 9, item: '持續關懷訪談', desc: '每週至少1次關懷訪談追蹤適應與狀況', std: '每週完成' },
+            { phase: '60天階段\n(第2個月)', no: 10, item: '技術考核通過', desc: '通過第二階段技術考核', std: '考核分數80分以上' },
+            { phase: '60天階段\n(第2個月)', no: 11, item: '60天評估', desc: '完成60天評估與下一階段目標設定', std: '第60天前完成評估' },
+            { phase: '90天階段\n(第3個月)', no: 12, item: '進階技能培訓', desc: '進階手法與應對能力練習與考核', std: '完成率達80%以上' },
+            { phase: '90天階段\n(第3個月)', no: 13, item: '服務品質達標', desc: '顧客滿意度與服務表現達標', std: '顧客回饋平均4.5分以上' },
+            { phase: '90天階段\n(第3個月)', no: 14, item: '90天評估', desc: '完成90天評估與後續發展規劃', std: '第90天前完成評估' },
+            { phase: '留任與發展', no: 15, item: '留任追蹤', desc: '追蹤新人留任狀況並關懷需求', std: '每月追蹤' },
+            { phase: '留任與發展', no: 16, item: '領航員評核', desc: '評核領航員輔導成效與投入度', std: '每季評核1次' },
+            { phase: '留任與發展', no: 17, item: '學習成長紀錄', desc: '新人學習歷程與成長紀錄完整保存', std: '持續更新' },
         ];
 
         function App() {
@@ -97,108 +150,205 @@
             const [selectedDate, setSelectedDate] = useState(todayStr); 
             const [inputDate, setInputDate] = useState(todayStr);       
             const [database, setDatabase] = useState({});
-            
+            const safeInputDate = inputDate || todayStr;
+
+            const [summaryRange, setSummaryRange] = useState('currentMonth');
+            const [summaryRangeStart, setSummaryRangeStart] = useState(todayStr.substring(0, 8) + '01');
+            const [summaryRangeEnd, setSummaryRangeEnd] = useState(todayStr);
+            const [summaryWeek, setSummaryWeek] = useState(() => {
+                const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+                const yearStart = new Date(d.getFullYear(), 0, 1);
+                const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+                return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+            });
+
             const [trendFilter, setTrendFilter] = useState('all');
             const [visibleChart, setVisibleChart] = useState(ITEM_CONFIG[0].id);
             const chartRef = useRef(null);
 
-            // 店長設定狀態 (包含指標與動態時段)
             const [settings, setSettings] = useState(
                 ITEM_CONFIG.reduce((acc, item) => ({ ...acc, [item.id]: { rate: item.defaultRate, score: item.defaultScore } }), {})
             );
             const [timeSlots, setTimeSlots] = useState(DEFAULT_TIME_SLOTS);
             const [newSlotName, setNewSlotName] = useState('');
 
-            // Firebase 狀態同步
+            // HR Module States
+            const [hrAuthUnlocked, setHrAuthUnlocked] = useState(false);
+            const [showPwdModal, setShowPwdModal] = useState(false);
+            const [pwdErrorModal, setPwdErrorModal] = useState(false); 
+            const [pwdInput, setPwdInput] = useState('');
+            const [fullScreenMode, setFullScreenMode] = useState(false);
+
+            const [hrEmployees, setHrEmployees] = useState({});
+            const [newEmpStore, setNewEmpStore] = useState('');
+            const [selectedStore, setSelectedStore] = useState(''); 
+            const [selectedEmpId, setSelectedEmpId] = useState(''); 
+            
+            const [showEmpModal, setShowEmpModal] = useState(false);
+            const [editEmpData, setEditEmpData] = useState({ id: '', name: '', storeName: '' });
+            const [isEditMode, setIsEditMode] = useState(false);
+
+            const [hrFormTab, setHrFormTab] = useState('form1');
+            
+            const [sigModal, setSigModal] = useState({ isOpen: false, fieldPath: '' });
+            const canvasRef = useRef(null);
+            const isDrawingRef = useRef(false);
+
+            // Admin States
+            const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+            const [showSuperAuthModal, setShowSuperAuthModal] = useState(false);
+            const [superAuthErrorModal, setSuperAuthErrorModal] = useState(false); 
+            const [superAccInput, setSuperAccInput] = useState('');
+            const [superPwdInput, setSuperPwdInput] = useState('');
+            const [systemUsers, setSystemUsers] = useState([]);
+            const [loggedInGroup, setLoggedInGroup] = useState('中清店');
+            const [editUser, setEditUser] = useState(null);
+            const [manageUserModal, setManageUserModal] = useState(false);
+
             useEffect(() => {
-                const initFb = () => {
-                    const { auth, signInAnonymously, onAuthStateChanged, db, collection, onSnapshot } = window.fb;
+                if (fullScreenMode) document.body.classList.add('pdf-mode');
+                else document.body.classList.remove('pdf-mode');
+            }, [fullScreenMode]);
+
+            const switchTab = (tabName) => {
+                if (tabName !== 'hr') {
+                    setHrAuthUnlocked(false);
+                    setShowPwdModal(false);
+                    setPwdInput('');
+                    setPwdErrorModal(false);
+                    setFullScreenMode(false); 
+                }
+                if (tabName !== 'admin') {
+                    setIsSuperAdmin(false);
+                    // Reset group name when leaving admin
+                    if(tabName !== 'hr') setLoggedInGroup('中清店');
+                }
+                setActiveTab(tabName);
+            };
+
+            const handlePwdSubmit = () => {
+                if (pwdInput === '8888') {
+                    setHrAuthUnlocked(true);
+                    setActiveTab('hr');
+                    setShowPwdModal(false);
+                    setPwdInput('');
+                    setPwdErrorModal(false);
+                } else {
+                    setPwdErrorModal(true); 
+                    setPwdInput('');
+                }
+            };
+
+            const handleSuperAuthSubmit = () => {
+                if (superAccInput === '信吉' && superPwdInput === '7310168888') {
+                    setIsSuperAdmin(true);
+                    setLoggedInGroup('總部最高權限');
+                    setActiveTab('admin');
+                    setShowSuperAuthModal(false);
+                    setSuperAccInput('');
+                    setSuperPwdInput('');
+                    setSuperAuthErrorModal(false);
+                } else {
+                    setSuperAuthErrorModal(true);
+                    setSuperPwdInput('');
+                }
+            };
+
+            useEffect(() => {
+                const initFb = async () => {
+                    if (!window.fb) return;
+                    const { auth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, db, collection, onSnapshot } = window.fb;
                     
-                    signInAnonymously(auth).catch(e => console.error("Firebase auth error:", e));
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (err) { console.error("Firebase Auth Exception:", err); }
 
                     const unsubAuth = onAuthStateChanged(auth, user => {
                         window.firebaseUser = user;
-                        if (user) {
-                            const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
-                            const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
-                            const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
+                        if (!user) return;
 
-                            onSnapshot(recordsRef, snap => {
-                                const newDb = {};
-                                snap.forEach(d => newDb[d.id] = d.data());
-                                setDatabase(newDb);
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                        const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
+                        const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
+                        const hrRef = collection(db, 'artifacts', appId, 'public', 'data', 'hr_employees');
+                        const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'system_users');
+
+                        onSnapshot(recordsRef, snap => {
+                            const newDb = {}; snap.forEach(d => newDb[d.id] = d.data()); setDatabase(newDb);
+                        });
+                        
+                        onSnapshot(settingsRef, snap => {
+                            snap.forEach(d => {
+                                if (d.id === "global") {
+                                    const data = d.data();
+                                    if (data.rates) setSettings(prev => ({ ...prev, ...data.rates }));
+                                    if (data.timeSlots && Array.isArray(data.timeSlots)) setTimeSlots(data.timeSlots);
+                                }
                             });
-                            
-                            onSnapshot(settingsRef, snap => {
-                                snap.forEach(d => {
-                                    if (d.id === "global") {
-                                        const data = d.data();
-                                        if (data.rates) setSettings(prev => ({ ...prev, ...data.rates }));
-                                        if (data.timeSlots) setTimeSlots(data.timeSlots);
-                                    }
-                                });
-                            });
-                        }
+                        });
+
+                        onSnapshot(hrRef, snap => {
+                            const newHr = {}; 
+                            snap.forEach(d => {
+                                const data = d.data();
+                                if(!data.isDeleted) newHr[d.id] = data;
+                            }); 
+                            setHrEmployees(newHr);
+                        });
+
+                        onSnapshot(usersRef, snap => {
+                            const users = []; snap.forEach(d => users.push({ id: d.id, ...d.data() })); setSystemUsers(users);
+                        });
                     });
                 };
-
                 if (window.fb) initFb();
                 else window.addEventListener('firebase-ready', initFb);
-                
                 return () => window.removeEventListener('firebase-ready', initFb);
             }, []);
+
+            const saveToFirebase = (collectionName, docId, dataToMerge, isMerge = true) => {
+                if (window.fb && window.firebaseUser) {
+                    const { db, doc, setDoc } = window.fb;
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
+                    setDoc(docRef, dataToMerge, { merge: isMerge }).catch(e => console.error("DB Write Error:", e));
+                }
+            };
 
             const getCurrentShiftData = (date, shift) => {
                 if (database[date] && database[date][shift]) return database[date][shift];
                 const emptyData = { customers: '', revenue: '' };
                 ITEM_CONFIG.forEach(item => emptyData[item.id] = '');
-                if (shift === 'manager') emptyData.slots = {}; // V3: 時段資料存放在 slots 內
+                if (shift === 'manager') emptyData.slots = {}; 
                 return emptyData;
-            };
-
-            const saveToFirebase = (collectionName, docId, dataToMerge) => {
-                if (window.fb && window.firebaseUser) {
-                    const { db, doc, setDoc } = window.fb;
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'akpi-e0698';
-                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
-                    setDoc(docRef, dataToMerge, { merge: true }).catch(e => console.error("DB Write Error:", e));
-                }
             };
 
             const handleShiftChange = (shift, field, value) => {
                 const parsedValue = value === '' ? '' : Number(value);
                 setDatabase(prev => {
                     const newDb = { ...prev };
-                    if (!newDb[inputDate]) {
-                        newDb[inputDate] = {
-                            morning: getCurrentShiftData(inputDate, 'morning'),
-                            evening: getCurrentShiftData(inputDate, 'evening'),
-                            night: getCurrentShiftData(inputDate, 'night'),
-                            manager: getCurrentShiftData(inputDate, 'manager')
-                        };
-                    }
-                    if (!newDb[inputDate].manager) newDb[inputDate].manager = getCurrentShiftData(inputDate, 'manager');
-                    
-                    newDb[inputDate][shift] = { ...newDb[inputDate][shift], [field]: parsedValue };
-                    saveToFirebase('records', inputDate, newDb[inputDate]);
+                    if (!newDb[safeInputDate]) newDb[safeInputDate] = { morning: getCurrentShiftData(safeInputDate, 'morning'), evening: getCurrentShiftData(safeInputDate, 'evening'), night: getCurrentShiftData(safeInputDate, 'night'), manager: getCurrentShiftData(safeInputDate, 'manager') };
+                    if (!newDb[safeInputDate].manager) newDb[safeInputDate].manager = getCurrentShiftData(safeInputDate, 'manager');
+                    newDb[safeInputDate][shift] = { ...newDb[safeInputDate][shift], [field]: parsedValue };
+                    saveToFirebase('records', safeInputDate, newDb[safeInputDate]);
                     return newDb;
                 });
             };
 
-            // V3: 處理時段級別的獨立資料 (HC 與 Rev)
             const handleSlotChange = (slotId, field, value) => {
                 const parsedValue = value === '' ? '' : Number(value);
                 setDatabase(prev => {
                     const newDb = { ...prev };
-                    if (!newDb[inputDate]) {
-                        newDb[inputDate] = { manager: getCurrentShiftData(inputDate, 'manager') };
-                    }
-                    if (!newDb[inputDate].manager) newDb[inputDate].manager = getCurrentShiftData(inputDate, 'manager');
-                    if (!newDb[inputDate].manager.slots) newDb[inputDate].manager.slots = {};
-                    if (!newDb[inputDate].manager.slots[slotId]) newDb[inputDate].manager.slots[slotId] = {};
-                    
-                    newDb[inputDate].manager.slots[slotId][field] = parsedValue;
-                    saveToFirebase('records', inputDate, newDb[inputDate]);
+                    if (!newDb[safeInputDate]) newDb[safeInputDate] = { manager: getCurrentShiftData(safeInputDate, 'manager') };
+                    if (!newDb[safeInputDate].manager) newDb[safeInputDate].manager = getCurrentShiftData(safeInputDate, 'manager');
+                    if (!newDb[safeInputDate].manager.slots) newDb[safeInputDate].manager.slots = {};
+                    if (!newDb[safeInputDate].manager.slots[slotId]) newDb[safeInputDate].manager.slots[slotId] = {};
+                    newDb[safeInputDate].manager.slots[slotId][field] = parsedValue;
+                    saveToFirebase('records', safeInputDate, newDb[safeInputDate]);
                     return newDb;
                 });
             };
@@ -215,21 +365,19 @@
             const handleAddSlot = () => {
                 if (!newSlotName.trim()) return;
                 const newSlots = [...timeSlots, { id: 'ts_' + Date.now(), label: newSlotName.trim() }];
-                setTimeSlots(newSlots);
-                saveToFirebase('settings', 'global', { timeSlots: newSlots });
-                setNewSlotName('');
+                setTimeSlots(newSlots); saveToFirebase('settings', 'global', { timeSlots: newSlots }); setNewSlotName('');
             };
 
             const handleDeleteSlot = (idToRemove) => {
                 const newSlots = timeSlots.filter(s => s.id !== idToRemove);
-                setTimeSlots(newSlots);
-                saveToFirebase('settings', 'global', { timeSlots: newSlots });
+                setTimeSlots(newSlots); saveToFirebase('settings', 'global', { timeSlots: newSlots });
             };
 
             const calculateTarget = (baseData, itemId) => {
+                if (!baseData) return 0;
                 const config = ITEM_CONFIG.find(i => i.id === itemId);
                 const baseValue = config.type === 'amount' ? (Number(baseData.revenue) || 0) : (Number(baseData.customers) || 0);
-                const rate = Number(settings[itemId]?.rate) || 0;
+                const rate = settings[itemId] && settings[itemId].rate ? Number(settings[itemId].rate) : 0;
                 return Math.ceil(baseValue * (rate / 100));
             };
 
@@ -241,9 +389,114 @@
                 return { gap, achieveRate, gapRate };
             };
 
-            // 1. 班別戰報
+            const handleSaveHrEmployee = (e) => {
+                e.preventDefault();
+                if (!editEmpData.id.trim() || !editEmpData.name.trim() || !editEmpData.storeName.trim()) { 
+                    alert("請輸入完整的店別、員工編號與姓名！"); return; 
+                }
+                if (!isEditMode && hrEmployees[editEmpData.id]) { 
+                    alert("此員工編號已存在！"); return; 
+                }
+                const newEmp = {
+                    ...editEmpData,
+                    form1: isEditMode ? (hrEmployees[editEmpData.id].form1 || { rows: {}, summary: {} }) : { rows: {}, summary: {} },
+                    form2: isEditMode ? (hrEmployees[editEmpData.id].form2 || { phase1: {}, phase2: {}, phase3: {}, phase4: {}, eval: {} }) : { phase1: {}, phase2: {}, phase3: {}, phase4: {}, eval: {} },
+                    form3: isEditMode ? (hrEmployees[editEmpData.id].form3 || { basic: {}, interview: {}, fact: '', emp: '', guide: {}, improve: [{},{},{}], track: {}, concl: {} }) : { basic: {}, interview: {}, fact: '', emp: '', guide: {}, improve: [{},{},{}], track: {}, concl: {} }
+                };
+                saveToFirebase('hr_employees', editEmpData.id, newEmp);
+                setSelectedStore(editEmpData.storeName);
+                setSelectedEmpId(editEmpData.id);
+                setShowEmpModal(false);
+            };
+
+            const handleDeleteHrEmployee = () => {
+                const currentEmp = hrEmployees[selectedEmpId] || null;
+                if(!currentEmp) return;
+                if(confirm(`確定要永久刪除員工 ${currentEmp.name} 及其所有表單紀錄嗎？這無法復原！`)) {
+                    saveToFirebase('hr_employees', currentEmp.id, { isDeleted: true }, false);
+                    setSelectedEmpId('');
+                }
+            };
+
+            const handleHrFieldChange = (empId, formType, fieldPath, value) => {
+                setHrEmployees(prev => {
+                    const empData = prev[empId];
+                    if (!empData) return prev;
+                    const updatedEmp = JSON.parse(JSON.stringify(empData));
+                    const keys = fieldPath.split('.');
+                    let current = updatedEmp;
+                    for (let i = 0; i < keys.length - 1; i++) {
+                        if (!current[keys[i]]) current[keys[i]] = {};
+                        current = current[keys[i]];
+                    }
+                    current[keys[keys.length - 1]] = value;
+                    saveToFirebase('hr_employees', empId, updatedEmp);
+                    return { ...prev, [empId]: updatedEmp };
+                });
+            };
+
+            // 簽名板
+            const startDrawing = (e) => { isDrawingRef.current = true; draw(e); };
+            const stopDrawing = () => { isDrawingRef.current = false; if (canvasRef.current) canvasRef.current.getContext('2d').beginPath(); };
+            const draw = (e) => {
+                if (!isDrawingRef.current || !canvasRef.current) return;
+                e.preventDefault();
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                if (!clientX || !clientY) return;
+                const x = clientX - rect.left;
+                const y = clientY - rect.top;
+                ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#000';
+                ctx.lineTo(x, y); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(x, y);
+            };
+            const clearCanvas = () => {
+                if (canvasRef.current) {
+                    const canvas = canvasRef.current;
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.beginPath();
+                }
+            };
+            const saveSignature = () => {
+                if (canvasRef.current && sigModal.fieldPath && selectedEmpId) {
+                    const dataUrl = canvasRef.current.toDataURL('image/png');
+                    handleHrFieldChange(selectedEmpId, null, sigModal.fieldPath, dataUrl);
+                    setSigModal({ isOpen: false, fieldPath: '' });
+                }
+            };
+            const openSignature = (fieldPath) => {
+                setSigModal({ isOpen: true, fieldPath });
+                setTimeout(() => {
+                    if (canvasRef.current) {
+                        const canvas = canvasRef.current;
+                        const parent = canvas.parentElement;
+                        canvas.width = parent.clientWidth;
+                        canvas.height = parent.clientHeight;
+                    }
+                }, 100);
+            };
+
+            const renderSignBox = (label, fieldPath, empData, customClass="") => {
+                const keys = fieldPath.split('.');
+                let val = empData;
+                for (let k of keys) { val = val && val[k]; }
+                return (
+                    <div className="flex flex-col items-center justify-center h-full w-full">
+                        {label && <div className="text-[10px] text-gray-500 mb-1">{label}</div>}
+                        <div className={`sign-box w-full ${customClass}`} onClick={() => openSignature(fieldPath)}>
+                            {val ? <img src={val} className="sign-img" alt="簽名" /> : <span>點擊簽名</span>}
+                        </div>
+                    </div>
+                );
+            };
+
+            // ---- Render Shift Data ----
             const renderShiftTab = (shiftKey, shiftName, icon, colorClass, bgColorClass) => {
-                const data = getCurrentShiftData(inputDate, shiftKey);
+                const data = getCurrentShiftData(safeInputDate, shiftKey);
                 const customersNum = Number(data.customers) || 0;
                 const revenueNum = Number(data.revenue) || 0;
                 const atv = customersNum > 0 ? Math.round(revenueNum / customersNum) : 0;
@@ -255,67 +508,42 @@
                                 <h2 className={`text-base font-bold ${colorClass}`}><i className={`fa-solid ${icon} mr-1`}></i>{shiftName} 數據輸入</h2>
                                 <div className="flex items-center">
                                     <label className="text-gray-600 mr-1 font-semibold text-xs">日期:</label>
-                                    <input type="date" value={inputDate} onChange={(e) => setInputDate(e.target.value)} 
-                                        className="p-0.5 border rounded shadow-sm outline-none text-xs" />
+                                    <input type="date" value={safeInputDate} onChange={(e) => setInputDate(e.target.value)} className="p-0.5 border rounded shadow-sm outline-none text-xs" />
                                 </div>
                             </div>
-
                             <div className="bg-white p-2 rounded shadow-sm border border-gray-200 flex-1 overflow-y-auto hide-scroll">
                                 <div className="grid grid-cols-2 gap-2 mb-2 bg-gray-50 p-1.5 rounded">
-                                    <div>
-                                        <label className="block text-xs text-gray-600 mb-0.5">來客數</label>
-                                        <input type="number" className="w-full p-1 border rounded outline-none font-bold text-gray-800" 
-                                            value={data.customers !== undefined ? data.customers : ''} onChange={(e) => handleShiftChange(shiftKey, 'customers', e.target.value)} placeholder="0" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-600 mb-0.5">總業績 (金額)</label>
-                                        <input type="number" className="w-full p-1 border rounded outline-none font-bold text-blue-700" 
-                                            value={data.revenue !== undefined ? data.revenue : ''} onChange={(e) => handleShiftChange(shiftKey, 'revenue', e.target.value)} placeholder="0" />
-                                    </div>
+                                    <div><label className="block text-xs text-gray-600 mb-0.5">來客數</label><input type="number" className="w-full p-1 border rounded outline-none font-bold text-gray-800" value={data.customers !== undefined ? data.customers : ''} onChange={(e) => handleShiftChange(shiftKey, 'customers', e.target.value)} placeholder="0" /></div>
+                                    <div><label className="block text-xs text-gray-600 mb-0.5">總業績 (金額)</label><input type="number" className="w-full p-1 border rounded outline-none font-bold text-blue-700" value={data.revenue !== undefined ? data.revenue : ''} onChange={(e) => handleShiftChange(shiftKey, 'revenue', e.target.value)} placeholder="0" /></div>
                                 </div>
-
                                 <div className="space-y-1.5">
                                     {ITEM_CONFIG.map(item => (
                                         <div key={`input-${item.id}`} className="flex items-center justify-between border-b pb-0.5">
                                             <span className="font-semibold text-gray-700 w-20 text-xs">{item.name}</span>
                                             <div className="flex items-center w-2/3">
                                                 <span className="text-[10px] text-gray-400 w-12 text-right mr-1">實際:</span>
-                                                <input type="number" className="w-full p-1 border border-blue-200 bg-blue-50/30 rounded outline-none text-blue-900 font-bold" 
-                                                    value={data[item.id] !== undefined ? data[item.id] : ''} onChange={(e) => handleShiftChange(shiftKey, item.id, e.target.value)} placeholder="0" />
+                                                <input type="number" className="w-full p-1 border border-blue-200 bg-blue-50/30 rounded outline-none text-blue-900 font-bold" value={data[item.id] !== undefined ? data[item.id] : ''} onChange={(e) => handleShiftChange(shiftKey, item.id, e.target.value)} placeholder="0" />
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         </div>
-
                         <div className="w-full md:w-1/2 screenshot-area bg-white p-2 rounded shadow-md border border-gray-300 flex flex-col overflow-y-auto hide-scroll">
                             <div className="text-center mb-1.5 shrink-0">
-                                <h2 className="text-lg font-black text-gray-800 tracking-wider">
-                                    <span className={`px-2 py-0.5 rounded text-white ${bgColorClass} mr-2 text-sm`}>{shiftName}</span>
-                                    當班績效戰報
-                                </h2>
-                                <div className="text-gray-500 mt-0.5 font-mono text-[10px]">{inputDate}</div>
+                                <h2 className="text-lg font-black text-gray-800 tracking-wider"><span className={`px-2 py-0.5 rounded text-white ${bgColorClass} mr-2 text-sm`}>{shiftName}</span>當班績效戰報</h2>
+                                <div className="text-gray-500 mt-0.5 font-mono text-[10px]">{safeInputDate}</div>
                             </div>
-
                             <div className="grid grid-cols-2 gap-2 mb-2 shrink-0">
-                                <div className="bg-gray-100 p-1.5 rounded text-center border">
-                                    <div className="text-gray-500 text-[10px]">來客數</div>
-                                    <div className="text-base font-bold text-gray-800">{customersNum}</div>
-                                </div>
-                                <div className="bg-blue-50 p-1.5 rounded text-center border border-blue-100">
-                                    <div className="text-blue-600 text-[10px]">客單價</div>
-                                    <div className="text-base font-bold text-blue-800">${atv.toLocaleString()}</div>
-                                </div>
+                                <div className="bg-gray-100 p-1.5 rounded text-center border"><div className="text-gray-500 text-[10px]">來客數</div><div className="text-base font-bold text-gray-800">{customersNum}</div></div>
+                                <div className="bg-blue-50 p-1.5 rounded text-center border border-blue-100"><div className="text-blue-600 text-[10px]">客單價</div><div className="text-base font-bold text-blue-800">${atv.toLocaleString()}</div></div>
                             </div>
-
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 flex-1 content-start">
                                 {ITEM_CONFIG.map(item => {
                                     const target = calculateTarget(data, item.id);
                                     const actual = Number(data[item.id]) || 0;
                                     const { gap, achieveRate, gapRate } = calcMetrics(target, actual);
                                     const isGood = gap >= 0;
-
                                     return (
                                         <div key={`view-${item.id}`} className="bg-white border rounded p-1.5 shadow-sm relative overflow-hidden flex flex-col justify-center">
                                             <div className={`absolute left-0 top-0 bottom-0 w-1 ${isGood ? 'bg-green-500' : 'bg-red-400'}`}></div>
@@ -327,18 +555,9 @@
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-3 gap-0.5 text-center text-[10px] pl-1.5">
-                                                <div className="bg-gray-50 rounded p-0.5">
-                                                    <div className="text-gray-400 scale-90">目標</div>
-                                                    <div className="font-semibold text-gray-700">{target}</div>
-                                                </div>
-                                                <div className="bg-blue-50 rounded p-0.5">
-                                                    <div className="text-blue-500 scale-90">實際</div>
-                                                    <div className="font-bold text-blue-700">{actual}</div>
-                                                </div>
-                                                <div className={`${isGood ? 'bg-green-50' : 'bg-red-50'} rounded p-0.5`}>
-                                                    <div className={`${isGood ? 'text-green-600' : 'text-red-500'} scale-90`}>差異</div>
-                                                    <div className={`font-bold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{gap > 0 ? `+${gap}` : gap}</div>
-                                                </div>
+                                                <div className="bg-gray-50 rounded p-0.5"><div className="text-gray-400 scale-90">目標</div><div className="font-semibold text-gray-700">{target}</div></div>
+                                                <div className="bg-blue-50 rounded p-0.5"><div className="text-blue-500 scale-90">實際</div><div className="font-bold text-blue-700">{actual}</div></div>
+                                                <div className={`${isGood ? 'bg-green-50' : 'bg-red-50'} rounded p-0.5`}><div className={`${isGood ? 'text-green-600' : 'text-red-500'} scale-90`}>差異</div><div className={`font-bold ${isGood ? 'text-green-700' : 'text-red-600'}`}>{gap > 0 ? `+${gap}` : gap}</div></div>
                                             </div>
                                         </div>
                                     );
@@ -349,37 +568,18 @@
                 );
             };
 
-            // 2. 三班累加結算
-            const [summaryRange, setSummaryRange] = useState('currentMonth');
-            const [summaryRangeStart, setSummaryRangeStart] = useState(getTodayStr().substring(0, 8) + '01');
-            const [summaryRangeEnd, setSummaryRangeEnd] = useState(getTodayStr());
-            const [summaryWeek, setSummaryWeek] = useState(() => {
-                const d = new Date();
-                d.setHours(0, 0, 0, 0);
-                d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-                const yearStart = new Date(d.getFullYear(), 0, 1);
-                const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-                return `${d.getFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-            });
-
+            // ---- Render Summary Tab ----
             const renderSummary = () => {
                 const summaryData = { customers: 0, revenue: 0, atv: 0, totalManpower: 0 };
                 ITEM_CONFIG.forEach(i => summaryData[i.id] = 0);
-
                 let displayTitle = "三班數據累加結算";
                 let calcKeys = [];
-                const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const fmtDateSafe = (d) => { if (!d || isNaN(d.getTime())) return ''; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-                if (summaryRange === 'single') {
-                    displayTitle = `${selectedDate} 單日查詢`;
-                    calcKeys = [selectedDate];
-                } else if (summaryRange === 'customRange') {
-                    displayTitle = `${summaryRangeStart} 至 ${summaryRangeEnd} 累加`;
-                    calcKeys = Object.keys(database).filter(k => k >= summaryRangeStart && k <= summaryRangeEnd);
-                } else if (summaryRange === 'currentMonth' || summaryRange === 'lastMonth') {
-                    const today = new Date();
-                    let targetMonth = summaryRange === 'currentMonth' ? today.getMonth() + 1 : today.getMonth();
-                    let targetYear = today.getFullYear();
+                if (summaryRange === 'single') { displayTitle = `${selectedDate} 單日查詢`; calcKeys = [selectedDate]; }
+                else if (summaryRange === 'customRange') { displayTitle = `${summaryRangeStart} 至 ${summaryRangeEnd} 累加`; calcKeys = Object.keys(database).filter(k => k >= summaryRangeStart && k <= summaryRangeEnd); }
+                else if (summaryRange === 'currentMonth' || summaryRange === 'lastMonth') {
+                    const today = new Date(); let targetMonth = summaryRange === 'currentMonth' ? today.getMonth() + 1 : today.getMonth(); let targetYear = today.getFullYear();
                     if (targetMonth === 0) { targetMonth = 12; targetYear -= 1; }
                     displayTitle = `${targetMonth}月 累計總和`;
                     const prefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
@@ -387,23 +587,20 @@
                 } else if (['currentWeek', 'lastWeek', 'customWeek'].includes(summaryRange)) {
                     let mon, sun;
                     if (summaryRange === 'currentWeek' || summaryRange === 'lastWeek') {
-                        const d = new Date();
-                        if (summaryRange === 'lastWeek') d.setDate(d.getDate() - 7);
-                        const day = d.getDay() || 7; 
-                        mon = new Date(d); mon.setDate(d.getDate() - day + 1);
-                        sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-                        displayTitle = summaryRange === 'currentWeek' ? `本週 (${fmtDate(mon).substring(5)}~${fmtDate(sun).substring(5)})` : `上週 (${fmtDate(mon).substring(5)}~${fmtDate(sun).substring(5)})`;
+                        const d = new Date(); if (summaryRange === 'lastWeek') d.setDate(d.getDate() - 7);
+                        const day = d.getDay() || 7; mon = new Date(d); mon.setDate(d.getDate() - day + 1); sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+                        displayTitle = summaryRange === 'currentWeek' ? `本週 (${fmtDateSafe(mon).substring(5)}~${fmtDateSafe(sun).substring(5)})` : `上週 (${fmtDateSafe(mon).substring(5)}~${fmtDateSafe(sun).substring(5)})`;
                     } else {
                         if (summaryWeek) {
                             const parts = summaryWeek.split('-W');
-                            mon = new Date(parseInt(parts[0], 10), 0, 4 - (new Date(parseInt(parts[0], 10), 0, 4).getDay() || 7) + 1 + (parseInt(parts[1], 10) - 1) * 7);
-                            sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-                            displayTitle = `指定週 (${fmtDate(mon).substring(5)}~${fmtDate(sun).substring(5)})`;
+                            if (parts.length === 2) {
+                                const year = parseInt(parts[0], 10); const week = parseInt(parts[1], 10); const jan4 = new Date(year, 0, 4); const dayOffset = jan4.getDay() || 7;
+                                mon = new Date(year, 0, 4 - dayOffset + 1 + (week - 1) * 7); sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+                                displayTitle = `指定週 (${fmtDateSafe(mon).substring(5)}~${fmtDateSafe(sun).substring(5)})`;
+                            }
                         }
                     }
-                    if (mon && sun) {
-                        calcKeys = Object.keys(database).filter(k => k >= fmtDate(mon) && k <= fmtDate(sun));
-                    }
+                    if (mon && sun) { const sStart = fmtDateSafe(mon); const sEnd = fmtDateSafe(sun); calcKeys = Object.keys(database).filter(k => k >= sStart && k <= sEnd); }
                 }
 
                 calcKeys.forEach(dateKey => {
@@ -416,7 +613,6 @@
                                 ITEM_CONFIG.forEach(i => summaryData[i.id] += Number(sData[i.id]) || 0);
                             }
                         });
-                        // 加總動態時段的人力
                         if (database[dateKey].manager && database[dateKey].manager.slots) {
                             Object.values(database[dateKey].manager.slots).forEach(slotData => {
                                 summaryData.totalManpower += Number(slotData.hc) || 0;
@@ -424,9 +620,39 @@
                         }
                     }
                 });
-                
                 summaryData.atv = summaryData.customers > 0 ? Math.round(summaryData.revenue / summaryData.customers) : 0;
                 const avgEfficiency = summaryData.totalManpower > 0 ? Math.round(summaryData.revenue / summaryData.totalManpower) : 0;
+
+                let maxDateStr = safeInputDate;
+                if (calcKeys.length > 0) maxDateStr = calcKeys.reduce((a, b) => a > b ? a : b);
+                const targetYear = parseInt(maxDateStr.substring(0, 4)) || new Date().getFullYear();
+                const targetMonth = parseInt(maxDateStr.substring(5, 7)) || (new Date().getMonth() + 1);
+                const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+                let pastWeekdayRev = 0, pastWeekdayCount = 0, pastWeekendRev = 0, pastWeekendCount = 0, futureWeekdayCount = 0, futureWeekendCount = 0;
+                const boundaryDateStr = maxDateStr > todayStr ? todayStr : maxDateStr;
+
+                for (let i = 1; i <= daysInMonth; i++) {
+                    const dStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                    const dObj = new Date(targetYear, targetMonth - 1, i);
+                    const isWeekend = dObj.getDay() === 0 || dObj.getDay() === 6;
+                    if (dStr <= boundaryDateStr) {
+                        let dayRev = 0;
+                        if (database[dStr]) {
+                            ['morning', 'evening', 'night'].forEach(shift => {
+                                if (database[dStr][shift] && database[dStr][shift].revenue) dayRev += Number(database[dStr][shift].revenue);
+                            });
+                        }
+                        if (isWeekend) { pastWeekendRev += dayRev; pastWeekendCount++; } else { pastWeekdayRev += dayRev; pastWeekdayCount++; }
+                    } else {
+                        if (isWeekend) futureWeekendCount++; else futureWeekdayCount++;
+                    }
+                }
+                
+                let avgWeekday = pastWeekdayCount > 0 ? pastWeekdayRev / pastWeekdayCount : 0;
+                let avgWeekend = pastWeekendCount > 0 ? pastWeekendRev / pastWeekendCount : 0;
+                if (avgWeekend === 0 && pastWeekendCount === 0) avgWeekend = avgWeekday;
+                if (avgWeekday === 0 && pastWeekdayCount === 0) avgWeekday = avgWeekend;
+                const predictedMonthEndRev = pastWeekdayRev + pastWeekendRev + (futureWeekdayCount * avgWeekday) + (futureWeekendCount * avgWeekend);
 
                 return (
                     <div className="bg-white p-4 rounded shadow border border-gray-200 h-full overflow-y-auto text-sm">
@@ -454,7 +680,7 @@
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                             <div className="bg-gray-100 p-3 rounded border text-center">
                                 <div className="text-gray-600 text-xs mb-1">期間累加來客</div>
                                 <div className="text-2xl font-black text-gray-800">{summaryData.customers}</div>
@@ -471,17 +697,19 @@
                                 <div className="text-emerald-700 text-xs mb-1">期間平均人效</div>
                                 <div className="text-2xl font-black text-emerald-600">${avgEfficiency.toLocaleString()}</div>
                             </div>
+                            <div className="bg-amber-50 p-3 rounded border border-amber-200 text-center relative group">
+                                <div className="text-amber-700 text-xs mb-1">預估月底業績 <i className="fa-solid fa-circle-info cursor-help"></i></div>
+                                <div className="text-2xl font-black text-amber-600">${Math.round(predictedMonthEndRev).toLocaleString()}</div>
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-48 p-2 bg-gray-800 text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none z-50 transition-opacity text-left">
+                                    依本月平/假日均值推算未來：<br/>平日均值: ${Math.round(avgWeekday).toLocaleString()} ({futureWeekdayCount}天)<br/>假日均值: ${Math.round(avgWeekend).toLocaleString()} ({futureWeekendCount}天)
+                                </div>
+                            </div>
                         </div>
 
                         <table className="w-full text-left border-collapse text-sm">
                             <thead>
                                 <tr className="bg-gray-800 text-white">
-                                    <th className="p-2 rounded-tl">評估項目</th>
-                                    <th className="p-2 text-right">目標</th>
-                                    <th className="p-2 text-right">實際總和</th>
-                                    <th className="p-2 text-right">差異數</th>
-                                    <th className="p-2 text-right">達成率</th>
-                                    <th className="p-2 text-right rounded-tr">差異率</th>
+                                    <th className="p-2 rounded-tl">評估項目</th><th className="p-2 text-right">目標</th><th className="p-2 text-right">實際總和</th><th className="p-2 text-right">差異數</th><th className="p-2 text-right">達成率</th><th className="p-2 text-right rounded-tr">差異率</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -507,7 +735,7 @@
                 );
             };
 
-            // 3. 店長稽核 (V3: 動態時段獨立產值與人效)
+            // ---- Render Audit Tab ----
             const renderAudit = () => {
                 const auditItems = [
                     { id: 'customers', name: '總來客數', isAmount: false },
@@ -515,35 +743,29 @@
                     ...ITEM_CONFIG.map(i => ({ id: i.id, name: i.name, isAmount: i.type === 'amount' }))
                 ];
 
-                const dayData = database[inputDate] || {};
+                const dayData = database[safeInputDate] || {};
                 const managerData = dayData.manager || { slots: {} };
                 const slotsData = managerData.slots || {};
 
                 const getSystemSum = (fieldId) => {
                     return ['morning', 'evening', 'night'].reduce((acc, shift) => {
-                        return acc + (Number(dayData[shift]?.[fieldId]) || 0);
+                        return acc + (dayData[shift] && dayData[shift][fieldId] ? Number(dayData[shift][fieldId]) : 0);
                     }, 0);
                 };
 
-                // V3: 結算總人力與時段業績總和
-                let totalHc = 0;
-                let sumSlotRevenue = 0;
-                
+                let totalHc = 0, sumSlotRevenue = 0;
                 timeSlots.forEach(slot => {
-                    totalHc += Number(slotsData[slot.id]?.hc) || 0;
-                    sumSlotRevenue += Number(slotsData[slot.id]?.rev) || 0;
+                    totalHc += slotsData[slot.id] && slotsData[slot.id].hc ? Number(slotsData[slot.id].hc) : 0;
+                    sumSlotRevenue += slotsData[slot.id] && slotsData[slot.id].rev ? Number(slotsData[slot.id].rev) : 0;
                 });
-                
                 const managerRev = Number(managerData.revenue) || 0;
                 const dailyEfficiency = totalHc > 0 ? Math.round(managerRev / totalHc) : 0;
 
-                // 績效雷達計算
-                let totalEarnedScore = 0;
-                let maxPossibleScore = 0;
+                let totalEarnedScore = 0, maxPossibleScore = 0;
                 const performanceScores = ITEM_CONFIG.map(item => {
                     const target = calculateTarget(managerData, item.id);
                     const actual = Number(managerData[item.id]) || 0;
-                    const maxScore = Number(settings[item.id]?.score) || 0;
+                    const maxScore = settings[item.id] && settings[item.id].score ? Number(settings[item.id].score) : 0;
                     let earned = target > 0 ? Math.min(maxScore, (actual / target) * maxScore) : (actual > 0 ? maxScore : 0);
                     totalEarnedScore += earned; maxPossibleScore += maxScore;
                     return { ...item, target, actual, earned, maxScore };
@@ -555,26 +777,20 @@
                             <h2 className="text-lg font-bold text-red-700"><i className="fa-solid fa-clipboard-check mr-2"></i>店長日結稽核</h2>
                             <div className="flex items-center">
                                 <label className="text-gray-600 mr-1 font-semibold text-xs">稽核日期:</label>
-                                <input type="date" value={inputDate} onChange={(e) => setInputDate(e.target.value)} 
-                                    className="p-0.5 border rounded shadow-sm outline-none text-xs text-red-800 font-bold" />
+                                <input type="date" value={safeInputDate} onChange={(e) => setInputDate(e.target.value)} className="p-0.5 border rounded shadow-sm outline-none text-xs text-red-800 font-bold" />
                             </div>
                         </div>
 
-                        {/* V3: 動態時段 人力與產值獨立區塊 */}
                         <div className="bg-blue-50/50 border border-blue-200 rounded p-3 mb-4">
                             <div className="flex justify-between items-end border-b border-blue-200 pb-2 mb-3">
-                                <h3 className="font-bold text-blue-800 text-sm">
-                                    <i className="fa-solid fa-users-gear mr-1"></i>各時段產值與人效獨立分析
-                                </h3>
+                                <h3 className="font-bold text-blue-800 text-sm"><i className="fa-solid fa-users-gear mr-1"></i>各時段產值與人效獨立分析</h3>
                                 <div className="text-[10px] text-gray-500 bg-white px-2 py-0.5 rounded border">時段業績加總: <span className="font-bold text-gray-700">${sumSlotRevenue.toLocaleString()}</span></div>
                             </div>
-                            
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
                                 {timeSlots.map(slot => {
-                                    const hc = Number(slotsData[slot.id]?.hc) || 0;
-                                    const rev = Number(slotsData[slot.id]?.rev) || 0;
-                                    const eff = hc > 0 ? Math.round(rev / hc) : rev; // 避免除以0
-                                    
+                                    const hc = slotsData[slot.id] && slotsData[slot.id].hc ? Number(slotsData[slot.id].hc) : 0;
+                                    const rev = slotsData[slot.id] && slotsData[slot.id].rev ? Number(slotsData[slot.id].rev) : 0;
+                                    const eff = hc > 0 ? Math.round(rev / hc) : rev; 
                                     return (
                                         <div key={slot.id} className="bg-white p-2 rounded border border-blue-100 shadow-sm flex flex-col relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-1 h-full bg-blue-400"></div>
@@ -582,81 +798,43 @@
                                             <div className="grid grid-cols-2 gap-2 mb-2 pl-2">
                                                 <div>
                                                     <div className="text-[10px] text-gray-400 mb-0.5">人數 (HC)</div>
-                                                    <input type="number" step="0.5" min="0" placeholder="0"
-                                                        className="w-full text-center border rounded p-1 outline-none font-bold text-gray-700 bg-gray-50 focus:bg-white"
-                                                        value={slotsData[slot.id]?.hc !== undefined ? slotsData[slot.id].hc : ''}
-                                                        onChange={(e) => handleSlotChange(slot.id, 'hc', e.target.value)}
-                                                    />
+                                                    <input type="number" step="0.5" min="0" placeholder="0" className="w-full text-center border rounded p-1 outline-none font-bold text-gray-700 bg-gray-50 focus:bg-white" value={(slotsData[slot.id] && slotsData[slot.id].hc !== undefined) ? slotsData[slot.id].hc : ''} onChange={(e) => handleSlotChange(slot.id, 'hc', e.target.value)} />
                                                 </div>
                                                 <div>
                                                     <div className="text-[10px] text-gray-400 mb-0.5">時段產值 ($)</div>
-                                                    <input type="number" min="0" placeholder="0"
-                                                        className="w-full text-center border rounded p-1 outline-none font-bold text-blue-700 bg-blue-50 focus:bg-white"
-                                                        value={slotsData[slot.id]?.rev !== undefined ? slotsData[slot.id].rev : ''}
-                                                        onChange={(e) => handleSlotChange(slot.id, 'rev', e.target.value)}
-                                                    />
+                                                    <input type="number" min="0" placeholder="0" className="w-full text-center border rounded p-1 outline-none font-bold text-blue-700 bg-blue-50 focus:bg-white" value={(slotsData[slot.id] && slotsData[slot.id].rev !== undefined) ? slotsData[slot.id].rev : ''} onChange={(e) => handleSlotChange(slot.id, 'rev', e.target.value)} />
                                                 </div>
                                             </div>
                                             <div className="bg-emerald-50 rounded p-1.5 flex justify-between items-center pl-2 ml-2 border border-emerald-100">
-                                                <span className="text-[10px] text-emerald-700">時段人效</span>
-                                                <span className="font-black text-emerald-600 text-sm">${eff.toLocaleString()}</span>
+                                                <span className="text-[10px] text-emerald-700">時段人效</span><span className="font-black text-emerald-600 text-sm">${eff.toLocaleString()}</span>
                                             </div>
                                         </div>
                                     )
                                 })}
                             </div>
-
                             <div className="flex items-center justify-between bg-blue-600 text-white p-2 rounded shadow-sm">
-                                <div>
-                                    <span className="text-xs opacity-80 block">單日總出勤人力</span>
-                                    <span className="text-xl font-black">{totalHc} <span className="text-sm font-normal">人</span></span>
-                                </div>
-                                <div className="text-right border-l border-blue-400 pl-4">
-                                    <span className="text-xs opacity-80 block">單日平均人效 (以日結總業績計)</span>
-                                    <span className="text-xl font-black">${dailyEfficiency.toLocaleString()}</span>
-                                </div>
+                                <div><span className="text-xs opacity-80 block">單日總出勤人力</span><span className="text-xl font-black">{totalHc} <span className="text-sm font-normal">人</span></span></div>
+                                <div className="text-right border-l border-blue-400 pl-4"><span className="text-xs opacity-80 block">單日平均人效 (以日結總業績計)</span><span className="text-xl font-black">${dailyEfficiency.toLocaleString()}</span></div>
                             </div>
                         </div>
 
-                        {/* 雷達與比對表 */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
                             <div className="bg-purple-50/50 border border-purple-200 rounded p-3 flex flex-col h-full">
-                                <h3 className="font-bold text-purple-800 mb-2 text-sm border-b border-purple-200 pb-1">
-                                    <i className="fa-solid fa-ranking-star mr-1"></i>今日綜合績效指標
-                                </h3>
+                                <h3 className="font-bold text-purple-800 mb-2 text-sm border-b border-purple-200 pb-1"><i className="fa-solid fa-ranking-star mr-1"></i>今日綜合績效指標</h3>
                                 <div className="flex-1 overflow-y-auto hide-scroll text-xs">
                                     {performanceScores.map(score => (
                                         <div key={`score-${score.id}`} className="flex justify-between items-center border-b border-purple-100 py-1">
-                                            <span className="text-gray-700 w-1/3">{score.name}</span>
-                                            <span className="text-gray-400 w-1/3 text-center text-[10px]">達標: {score.actual}/{score.target}</span>
-                                            <span className="font-bold text-purple-700 w-1/3 text-right">
-                                                {score.earned.toFixed(1)} <span className="text-gray-400 font-normal text-[10px]">/ {score.maxScore}</span>
-                                            </span>
+                                            <span className="text-gray-700 w-1/3">{score.name}</span><span className="text-gray-400 w-1/3 text-center text-[10px]">達標: {score.actual}/{score.target}</span><span className="font-bold text-purple-700 w-1/3 text-right">{score.earned.toFixed(1)} <span className="text-gray-400 font-normal text-[10px]">/ {score.maxScore}</span></span>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="mt-2 pt-2 border-t border-purple-300 flex justify-between items-end">
-                                    <span className="font-bold text-purple-900">總項得分</span>
-                                    <span className="text-2xl font-black text-purple-700">
-                                        {totalEarnedScore.toFixed(1)} <span className="text-sm font-normal text-gray-500">/ {maxPossibleScore} 分</span>
-                                    </span>
-                                </div>
+                                <div className="mt-2 pt-2 border-t border-purple-300 flex justify-between items-end"><span className="font-bold text-purple-900">總項得分</span><span className="text-2xl font-black text-purple-700">{totalEarnedScore.toFixed(1)} <span className="text-sm font-normal text-gray-500">/ {maxPossibleScore} 分</span></span></div>
                             </div>
-                            
                             <div className="bg-white border rounded shadow-sm p-2 flex flex-col h-full">
-                                <p className="text-[10px] text-gray-500 mb-2 bg-red-50 p-1.5 rounded border border-red-100">
-                                    <i className="fa-solid fa-circle-info mr-1"></i>系統自動比對三班輸入總和，紅字代表異常或漏KEY。
-                                </p>
+                                <p className="text-[10px] text-gray-500 mb-2 bg-red-50 p-1.5 rounded border border-red-100"><i className="fa-solid fa-circle-info mr-1"></i>系統自動比對三班輸入總和，紅字代表異常或漏KEY。</p>
                                 <div className="overflow-x-auto hide-scroll flex-1">
                                     <table className="w-full text-xs border-collapse">
-                                        <thead>
-                                            <tr className="bg-gray-100 text-gray-700">
-                                                <th className="p-1.5 border text-left">項目</th>
-                                                <th className="p-1.5 border text-right">系統加總</th>
-                                                <th className="p-1.5 border text-center bg-red-50 text-red-700">日結輸入</th>
-                                                <th className="p-1.5 border text-right">差異</th>
-                                            </tr>
-                                        </thead>
+                                        <thead><tr className="bg-gray-100 text-gray-700"><th className="p-1.5 border text-left">項目</th><th className="p-1.5 border text-right">系統加總</th><th className="p-1.5 border text-center bg-red-50 text-red-700">日結輸入</th><th className="p-1.5 border text-right">差異</th></tr></thead>
                                         <tbody>
                                             {auditItems.map(item => {
                                                 const sysSum = getSystemSum(item.id);
@@ -664,18 +842,12 @@
                                                 const hasInput = managerVal !== undefined && managerVal !== '';
                                                 const diff = hasInput ? (Number(managerVal) || 0) - sysSum : null;
                                                 let diffDisplay = '-'; let diffColor = 'text-gray-300';
-                                                if (hasInput) {
-                                                    if (diff === 0) { diffDisplay = '相符'; diffColor = 'text-green-600 bg-green-50'; }
-                                                    else { diffDisplay = diff > 0 ? `+${diff}` : diff; diffColor = 'text-red-600 bg-red-50 font-bold'; }
-                                                }
+                                                if (hasInput) { if (diff === 0) { diffDisplay = '相符'; diffColor = 'text-green-600 bg-green-50'; } else { diffDisplay = diff > 0 ? `+${diff}` : diff; diffColor = 'text-red-600 bg-red-50 font-bold'; } }
                                                 return (
                                                     <tr key={item.id} className="border-b hover:bg-gray-50">
                                                         <td className="p-1.5 font-bold text-gray-700">{item.name}</td>
                                                         <td className="p-1.5 text-right text-gray-500">{item.isAmount ? '$' : ''}{sysSum.toLocaleString()}</td>
-                                                        <td className="p-1 text-center bg-red-50/30 w-[80px]">
-                                                            <input type="number" className="w-full p-1 border border-red-300 rounded text-right text-xs text-red-800 font-bold outline-none" 
-                                                                value={managerVal !== undefined ? managerVal : ''} onChange={(e) => handleShiftChange('manager', item.id, e.target.value)} />
-                                                        </td>
+                                                        <td className="p-1 text-center bg-red-50/30 w-[80px]"><input type="number" className="w-full p-1 border border-red-300 rounded text-right text-xs text-red-800 font-bold outline-none" value={managerVal !== undefined ? managerVal : ''} onChange={(e) => handleShiftChange('manager', item.id, e.target.value)} /></td>
                                                         <td className={`p-1.5 text-right ${diffColor}`}>{diffDisplay}</td>
                                                     </tr>
                                                 )
@@ -689,22 +861,18 @@
                 );
             };
 
-            // 4. 趨勢圖表與排名 (保持不變, 僅計算有稍微依賴 slots)
+            // ---- Render Trend Tab ----
             const getMonthlyTrendData = () => {
-                const monthPrefix = inputDate.substring(0, 7); 
-                const daysInMonth = new Date(parseInt(monthPrefix.split('-')[0]), parseInt(monthPrefix.split('-')[1]), 0).getDate();
+                const monthPrefix = safeInputDate.substring(0, 7); 
+                const year = parseInt(monthPrefix.split('-')[0]) || new Date().getFullYear();
+                const month = parseInt(monthPrefix.split('-')[1]) || (new Date().getMonth() + 1);
+                const daysInMonth = new Date(year, month, 0).getDate();
                 const sortedDates = Array.from({length: daysInMonth}, (_, i) => `${monthPrefix}-${(i+1).toString().padStart(2, '0')}`);
                 const trendData = { dates: sortedDates, dailyTotals: {}, cumulative: {}, shiftBreakdown: {}, chartDatasets: [] };
-                
                 const currentCumulative = { customers: 0, revenue: 0 };
                 const currentShiftBreakdown = { morning: { customers: 0, revenue: 0 }, evening: { customers: 0, revenue: 0 }, night: { customers: 0, revenue: 0 } };
                 
-                ITEM_CONFIG.forEach(i => {
-                    currentCumulative[i.id] = 0;
-                    currentShiftBreakdown.morning[i.id] = 0;
-                    currentShiftBreakdown.evening[i.id] = 0;
-                    currentShiftBreakdown.night[i.id] = 0;
-                });
+                ITEM_CONFIG.forEach(i => { currentCumulative[i.id] = 0; currentShiftBreakdown.morning[i.id] = 0; currentShiftBreakdown.evening[i.id] = 0; currentShiftBreakdown.night[i.id] = 0; });
 
                 sortedDates.forEach(date => {
                     let hasData = false;
@@ -746,16 +914,14 @@
                 ITEM_CONFIG.forEach(item => {
                     if(item.id === visibleChart) {
                         const dataPoints = sortedDates.map(date => trendData.dailyTotals[date] ? trendData.dailyTotals[date][item.id] : null);
-                        trendData.chartDatasets.push({
-                            label: item.name, data: dataPoints, borderColor: item.color, backgroundColor: item.color, tension: 0.3, fill: false, borderWidth: 2, pointRadius: 2, spanGaps: true
-                        });
+                        trendData.chartDatasets.push({ label: item.name, data: dataPoints, borderColor: item.color, backgroundColor: item.color, tension: 0.3, fill: false, borderWidth: 2, pointRadius: 2, spanGaps: true });
                     }
                 });
                 return trendData;
             };
 
             useEffect(() => {
-                if (activeTab !== 'trend') return;
+                if (activeTab !== 'trend' || typeof Chart === 'undefined') return;
                 const trendData = getMonthlyTrendData();
                 const ctx = document.getElementById('trendChart');
                 if (ctx) {
@@ -770,7 +936,7 @@
                                 y: { beginAtZero: true, ticks: { font: { size: 9 } } }, 
                                 x: { ticks: { font: { size: 9 }, color: (ctx) => {
                                     if (ctx.tick && ctx.tick.label) {
-                                        const d = new Date(`${inputDate.substring(0, 7)}-${ctx.tick.label.toString().padStart(2, '0')}`.replace(/-/g, '/'));
+                                        const d = new Date(`${safeInputDate.substring(0, 7)}-${ctx.tick.label.toString().padStart(2, '0')}`.replace(/-/g, '/'));
                                         if (d.getDay() === 0 || d.getDay() === 6) return '#ef4444';
                                     }
                                     return '#64748b';
@@ -780,14 +946,14 @@
                     });
                 }
                 return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
-            }, [activeTab, database, trendFilter, settings, visibleChart, inputDate]);
+            }, [activeTab, database, trendFilter, settings, visibleChart, safeInputDate]);
 
             const renderTrendTab = () => {
                 const trendData = getMonthlyTrendData();
                 const dates = trendData.dates;
-                const todayData = dates.find(d => d === inputDate);
-                const latestCumulative = todayData ? trendData.cumulative[inputDate] : null;
-                const latestBreakdown = todayData ? trendData.shiftBreakdown[inputDate] : null;
+                const todayData = dates.find(d => d === safeInputDate);
+                const latestCumulative = todayData ? trendData.cumulative[safeInputDate] : null;
+                const latestBreakdown = todayData ? trendData.shiftBreakdown[safeInputDate] : null;
 
                 const renderRankings = (itemId) => {
                     if (!latestBreakdown || trendFilter !== 'all') return null; 
@@ -826,9 +992,9 @@
                     <div className="flex flex-col h-full gap-1.5 text-sm overflow-y-auto hide-scroll pb-2">
                         <div className="bg-white p-1.5 rounded shadow border border-purple-200 shrink-0">
                             <div className="flex justify-between items-center mb-1">
-                                <h2 className="text-sm font-bold text-purple-800"><i className="fa-solid fa-calendar-check mr-1"></i>本月累計 (至 {inputDate.split('-')[1]}/{inputDate.split('-')[2]})</h2>
+                                <h2 className="text-sm font-bold text-purple-800"><i className="fa-solid fa-calendar-check mr-1"></i>本月累計 (至 {(safeInputDate.split('-')[1]) || ''}/{(safeInputDate.split('-')[2]) || ''})</h2>
                                 <div className="flex items-center gap-2">
-                                    <input type="month" value={inputDate.substring(0,7)} onChange={(e) => setInputDate(`${e.target.value}-01`)} className="p-0.5 border rounded text-xs bg-gray-50 outline-none" />
+                                    <input type="month" value={safeInputDate.substring(0,7)} onChange={(e) => setInputDate(`${e.target.value}-01`)} className="p-0.5 border rounded text-xs bg-gray-50 outline-none" />
                                     <div className="flex bg-gray-100 rounded overflow-hidden text-[10px]">
                                         {['all', 'morning', 'evening', 'night'].map(f => (
                                             <button key={f} onClick={() => setTrendFilter(f)} className={`px-2 py-0.5 ${trendFilter === f ? 'bg-purple-500 text-white font-bold' : 'text-gray-600 hover:bg-gray-200'}`}>
@@ -901,94 +1067,903 @@
                 );
             };
 
-            // 5. 店長設定 (V3: 加入動態時段管理)
-            const renderSettings = () => (
-                <div className="flex flex-col md:flex-row h-full gap-4 text-sm overflow-hidden">
-                    <div className="w-full md:w-1/2 bg-white p-4 rounded shadow border border-gray-200 overflow-y-auto hide-scroll">
-                        <h2 className="text-lg font-bold text-gray-800 mb-2"><i className="fa-solid fa-gear mr-2 text-gray-500"></i>各項指標設定</h2>
-                        <p className="text-xs text-gray-500 mb-4">設定各項目的目標轉換率(%)與配分。設定後連動全系統計算。</p>
-                        <table className="w-full text-left border-collapse text-xs">
-                            <thead>
-                                <tr className="bg-gray-100">
-                                    <th className="p-2 border">指標項目</th>
-                                    <th className="p-2 border">佔比 (%)</th>
-                                    <th className="p-2 border">滿分</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {ITEM_CONFIG.map(item => (
-                                    <tr key={item.id} className="hover:bg-gray-50">
-                                        <td className="p-2 border font-semibold">{item.name} <div className="text-[10px] text-gray-400">{item.type === 'amount' ? '當班業績' : '當班來客'}</div></td>
-                                        <td className="p-2 border">
-                                            <input type="number" className="p-1 border rounded w-16 text-center outline-none" value={settings[item.id]?.rate !== undefined ? settings[item.id].rate : ''} onChange={(e) => handleSettingChange(item.id, 'rate', e.target.value)} /> %
-                                        </td>
-                                        <td className="p-2 border">
-                                            <input type="number" className="p-1 border rounded w-16 text-center outline-none" value={settings[item.id]?.score !== undefined ? settings[item.id].score : ''} onChange={(e) => handleSettingChange(item.id, 'score', e.target.value)} /> 分
-                                        </td>
+            // ---- Render Settings Tab ----
+            const renderSettings = () => {
+                const totalScore = ITEM_CONFIG.reduce((sum, item) => sum + (Number(settings[item.id]?.score) || 0), 0);
+
+                return (
+                    <div className="flex flex-col md:flex-row h-full gap-4 text-sm overflow-hidden">
+                        <div className="w-full md:w-1/2 bg-white p-4 rounded shadow border border-gray-200 overflow-y-auto hide-scroll">
+                            <h2 className="text-lg font-bold text-gray-800 mb-2"><i className="fa-solid fa-gear mr-2 text-gray-500"></i>各項指標設定</h2>
+                            <p className="text-xs text-gray-500 mb-4">設定各項目的目標轉換率(%)與配分。設定後連動全系統計算。</p>
+                            <table className="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr className="bg-gray-100">
+                                        <th className="p-2 border">指標項目</th>
+                                        <th className="p-2 border">佔比 (%)</th>
+                                        <th className="p-2 border">得分</th>
                                     </tr>
+                                </thead>
+                                <tbody>
+                                    {ITEM_CONFIG.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50">
+                                            <td className="p-2 border font-semibold">{item.name} <div className="text-[10px] text-gray-400">{item.type === 'amount' ? '當班業績' : '當班來客'}</div></td>
+                                            <td className="p-2 border">
+                                                <input type="number" className="p-1 border rounded w-16 text-center outline-none" 
+                                                    value={(settings[item.id] && settings[item.id].rate !== undefined) ? settings[item.id].rate : ''} 
+                                                    onChange={(e) => handleSettingChange(item.id, 'rate', e.target.value)} /> %
+                                            </td>
+                                            <td className="p-2 border">
+                                                <input type="number" className="p-1 border rounded w-16 text-center outline-none" 
+                                                    value={(settings[item.id] && settings[item.id].score !== undefined) ? settings[item.id].score : ''} 
+                                                    onChange={(e) => handleSettingChange(item.id, 'score', e.target.value)} /> 分
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr className="bg-blue-50 font-bold">
+                                        <td colSpan="2" className="p-2 border text-right">總分累計：</td>
+                                        <td className="p-2 border text-center text-blue-700">{totalScore} 分</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        <div className="w-full md:w-1/2 bg-blue-50/30 p-4 rounded shadow border border-blue-200 overflow-y-auto hide-scroll">
+                            <h2 className="text-lg font-bold text-blue-800 mb-2"><i className="fa-solid fa-clock mr-2"></i>排班時段管理</h2>
+                            <p className="text-xs text-gray-500 mb-4">在此新增或刪除稽核用的排班時段。這些時段將顯示於「店長稽核」分頁，供輸入各時段產值與人數。</p>
+                            
+                            <div className="flex gap-2 mb-4">
+                                <input type="text" placeholder="輸入新時段名稱 (例: 10-14 時段)" 
+                                    className="flex-1 p-2 border border-blue-300 rounded outline-none focus:ring-1 focus:ring-blue-500 text-sm"
+                                    value={newSlotName} onChange={(e) => setNewSlotName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddSlot()} />
+                                <button onClick={handleAddSlot} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"><i className="fa-solid fa-plus mr-1"></i>新增</button>
+                            </div>
+
+                            <div className="space-y-2">
+                                {timeSlots.map((slot, idx) => (
+                                    <div key={slot.id} className="flex justify-between items-center bg-white p-2.5 rounded border shadow-sm">
+                                        <div className="font-bold text-gray-700"><span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs mr-2">{idx + 1}</span>{slot.label}</div>
+                                        <button onClick={() => handleDeleteSlot(slot.id)} className="text-red-500 hover:text-red-700 bg-red-50 px-2 py-1 rounded transition text-xs">
+                                            <i className="fa-solid fa-trash-can mr-1"></i>刪除
+                                        </button>
+                                    </div>
                                 ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div className="w-full md:w-1/2 bg-blue-50/30 p-4 rounded shadow border border-blue-200 overflow-y-auto hide-scroll">
-                        <h2 className="text-lg font-bold text-blue-800 mb-2"><i className="fa-solid fa-clock mr-2"></i>排班時段管理</h2>
-                        <p className="text-xs text-gray-500 mb-4">在此新增或刪除稽核用的排班時段。這些時段將顯示於「店長稽核」分頁，供輸入各時段產值與人數。</p>
-                        
-                        <div className="flex gap-2 mb-4">
-                            <input type="text" placeholder="輸入新時段名稱 (例: 10-14 時段)" 
-                                className="flex-1 p-2 border border-blue-300 rounded outline-none focus:ring-1 focus:ring-blue-500 text-sm"
-                                value={newSlotName} onChange={(e) => setNewSlotName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddSlot()} />
-                            <button onClick={handleAddSlot} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"><i className="fa-solid fa-plus mr-1"></i>新增</button>
+                                {timeSlots.length === 0 && <div className="text-center text-gray-400 py-4">目前沒有設定任何時段</div>}
+                            </div>
                         </div>
+                    </div>
+                );
+            };
 
-                        <div className="space-y-2">
-                            {timeSlots.map((slot, idx) => (
-                                <div key={slot.id} className="flex justify-between items-center bg-white p-2.5 rounded border shadow-sm">
-                                    <div className="font-bold text-gray-700"><span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs mr-2">{idx + 1}</span>{slot.label}</div>
-                                    <button onClick={() => handleDeleteSlot(slot.id)} className="text-red-500 hover:text-red-700 bg-red-50 px-2 py-1 rounded transition text-xs">
-                                        <i className="fa-solid fa-trash-can mr-1"></i>刪除
-                                    </button>
+            // ---- Render HR Forms (Forms 1, 2, 3 nested logic) ----
+            const renderHrTab = () => {
+                if (!hrAuthUnlocked) return <div className="p-4 text-center text-red-500 mt-10 font-bold">拒絕存取：請由導覽列重新驗證密碼。</div>;
+                
+                const availableStores = [...new Set(Object.values(hrEmployees).map(emp => emp.storeName).filter(Boolean))];
+                const empsInStore = Object.values(hrEmployees).filter(emp => emp.storeName === selectedStore);
+                const currentEmp = hrEmployees[selectedEmpId] || null;
+
+                const handleAddHrEmployeeWithStore = () => {
+                    if (!newEmpId.trim() || !newEmpName.trim() || !newEmpStore.trim()) { alert("請填寫完整的店別、員工編號與姓名！"); return; }
+                    if (hrEmployees[newEmpId]) { alert("此員工編號已存在！"); return; }
+                    const newEmp = {
+                        id: newEmpId, name: newEmpName, storeName: newEmpStore,
+                        form1: { rows: {}, summary: {} },
+                        form2: { phase1: {}, phase2: {}, phase3: {}, phase4: {}, eval: {} },
+                        form3: { basic: {}, interview: {}, fact: '', emp: '', guide: {}, improve: [{},{},{}], track: {}, concl: {} }
+                    };
+                    saveToFirebase('hr_employees', newEmpId, newEmp);
+                    setNewEmpId(''); setNewEmpName(''); setNewEmpStore('');
+                    setSelectedStore(newEmpStore);
+                    setSelectedEmpId(newEmpId);
+                };
+
+                const renderHrForm1 = (emp) => {
+                    const fData = emp.form1 || { rows: {}, summary: {} };
+                    const chg = (path, val) => handleHrFieldChange(emp.id, 'form1', path, val);
+
+                    return (
+                        <div className="hr-form-container">
+                            <div className="bg-[#000080] text-white text-center py-4 relative">
+                                <h2 className="text-2xl font-bold tracking-[0.2em] mb-1">領航員執行檢核表 ( 新人培育管理 )</h2>
+                                <p className="text-[10px] font-bold tracking-widest text-red-400 bg-white inline-block px-4 py-0.5 rounded-full mt-1">落實領航員制度．陪伴關懷．提升新人留任率與專業力</p>
+                            </div>
+                            <div className="p-4 text-xs font-bold text-gray-800">
+                                <div className="flex justify-between items-end mb-2">
+                                    <div className="flex items-center gap-1">店名: <input type="text" className="border-b border-gray-400 outline-none w-24 text-center font-bold" value={(fData.store) || emp.storeName || ''} onChange={e=>chg('form1.store', e.target.value)}/></div>
+                                    <div className="flex items-center gap-1">店長: <input type="text" className="border-b border-gray-400 outline-none w-20 text-center font-bold" value={(fData.manager) || ''} onChange={e=>chg('form1.manager', e.target.value)}/></div>
+                                    <div className="flex items-center gap-1">總監: <input type="text" className="border-b border-gray-400 outline-none w-20 text-center font-bold" value={(fData.director) || ''} onChange={e=>chg('form1.director', e.target.value)}/></div>
+                                    <div className="flex items-center gap-1 text-xs">檢核日期: <input type="date" className="border-b border-gray-400 outline-none text-xs" value={(fData.date) || ''} onChange={e=>chg('form1.date', e.target.value)}/></div>
                                 </div>
-                            ))}
-                            {timeSlots.length === 0 && <div className="text-center text-gray-400 py-4">目前沒有設定任何時段</div>}
+
+                                <div className="bg-[#000080] text-white p-1.5 text-center text-[11px] font-normal mb-2 tracking-wide">
+                                    檢核說明：本表由店長每月填寫，總監巡店時覆核，確保領航員制度確實執行，落實新人30/60/90天培育計畫。
+                                </div>
+
+                                <table className="w-full hr-table text-[10px] mb-4">
+                                    <thead>
+                                        <tr className="bg-gray-100 border-2 border-gray-400">
+                                            <th rowSpan="2" className="w-[10%]">階段</th>
+                                            <th rowSpan="2" className="w-[12%]">檢核項目</th>
+                                            <th rowSpan="2" className="w-[20%]">檢核內容說明</th>
+                                            <th rowSpan="2" className="w-[14%]">應完成標準</th>
+                                            <th colSpan="3" className="w-[12%] p-0">完成狀況(請勾選)</th>
+                                            <th rowSpan="2" className="w-[8%]">完成日期</th>
+                                            <th rowSpan="2" className="w-[8%]">領航員<br/>簽名</th>
+                                            <th rowSpan="2" className="w-[6%] leading-tight">店長<br/>覆核<br/>(✓)</th>
+                                            <th rowSpan="2" className="w-[6%] leading-tight">總監<br/>覆核<br/>(✓)</th>
+                                            <th rowSpan="2" className="w-[4%]">備註</th>
+                                        </tr>
+                                        <tr className="bg-gray-100 text-[8px] border-2 border-gray-400">
+                                            <th>已完成</th><th>部分完成</th><th>未完成</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {PILOT_ITEMS.map((item, idx) => {
+                                            const row = (fData.rows && fData.rows[item.no]) || {};
+                                            const rChg = (f, v) => chg(`form1.rows.${item.no}.${f}`, v);
+                                            const isFirstInPhase = idx === 0 || PILOT_ITEMS[idx-1].phase !== item.phase;
+                                            const phaseCount = PILOT_ITEMS.filter(i => i.phase === item.phase).length;
+                                            let phaseBg = item.no <= 4 ? 'bg-[#faebd7]' : item.no <= 8 ? 'bg-[#fffacd]' : item.no <= 11 ? 'bg-[#f0fff0]' : item.no <= 14 ? 'bg-[#e0ffff]' : 'bg-[#f0f8ff]';
+
+                                            return (
+                                                <tr key={item.no}>
+                                                    {isFirstInPhase && (
+                                                        <td rowSpan={phaseCount} className={`font-bold whitespace-pre-wrap ${phaseBg}`}>{item.phase}</td>
+                                                    )}
+                                                    <td className="font-bold flex items-center justify-center border-none h-full min-h-[40px]">
+                                                        <span className="w-4 inline-block">{item.no}</span><span className="text-left flex-1 pl-1">{item.item}</span>
+                                                    </td>
+                                                    <td className="text-left text-[9px] px-1 font-normal leading-tight">{item.desc}</td>
+                                                    <td className="text-[9px] font-normal leading-tight">{item.std}</td>
+                                                    <td className="p-0 border-l border-r"><input type="checkbox" checked={row.status==='done'} onChange={()=>rChg('status', row.status==='done' ? '' : 'done')} className="scale-100"/></td>
+                                                    <td className="p-0 border-r"><input type="checkbox" checked={row.status==='part'} onChange={()=>rChg('status', row.status==='part' ? '' : 'part')} className="scale-100"/></td>
+                                                    <td className="p-0"><input type="checkbox" checked={row.status==='none'} onChange={()=>rChg('status', row.status==='none' ? '' : 'none')} className="scale-100"/></td>
+                                                    <td className="p-0 relative"><input type="date" className="w-full h-full text-center border-none outline-none bg-transparent text-[9px]" value={row.date||''} onChange={e=>rChg('date', e.target.value)}/></td>
+                                                    <td className="p-0 h-full">{renderSignBox('', `form1.rows.${item.no}.sig1`, emp, "min-h-[30px] border-none")}</td>
+                                                    <td className="p-0 text-center align-middle"><input type="checkbox" checked={row.mgrCheck||false} onChange={(e) => rChg('mgrCheck', e.target.checked)} className="scale-125" /></td>
+                                                    <td className="p-0 text-center align-middle"><input type="checkbox" checked={row.dirCheck||false} onChange={(e) => rChg('dirCheck', e.target.checked)} className="scale-125" /></td>
+                                                    <td className="p-0"><input type="text" className="w-full border-none outline-none px-1" value={row.note||''} onChange={e=>rChg('note', e.target.value)}/></td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+
+                                <table className="w-full hr-table text-[10px] border-collapse border-2 border-gray-400 font-bold">
+                                    <tbody>
+                                        <tr className="bg-gray-100">
+                                            <td colSpan="2" className="w-1/4 py-2">本月新人培育總結</td>
+                                            <td colSpan="2" className="w-3/8 py-2">店長檢核</td>
+                                            <td colSpan="2" className="w-3/8 py-2">總監覆核意見</td>
+                                        </tr>
+                                        <tr>
+                                            <td className="w-24">本月新增<br/>新人數</td>
+                                            <td className="w-16"><input type="number" className="w-8 border-b border-gray-400 outline-none text-center font-bold" value={(fData.summary && fData.summary.newNum) || ''} onChange={e=>chg('form1.summary.newNum',e.target.value)}/> 人</td>
+                                            <td colSpan="2" className="text-left align-top px-2 pb-1 font-normal">
+                                                <div className="flex items-center gap-4 border-b pb-1 mb-1 font-bold">
+                                                    <span>檢核結果:</span>
+                                                    <label className="checkbox-group"><input type="checkbox" checked={fData.summary?.mgrRes==='good'} onChange={()=>chg('form1.summary.mgrRes', fData.summary?.mgrRes === 'good' ? '' : 'good')}/> 良好</label>
+                                                    <label className="checkbox-group"><input type="checkbox" checked={fData.summary?.mgrRes==='bad'} onChange={()=>chg('form1.summary.mgrRes', fData.summary?.mgrRes === 'bad' ? '' : 'bad')}/> 需加強</label>
+                                                </div>
+                                                需加強項目:<br/><textarea className="w-full border-none bg-transparent outline-none text-[10px] resize-none h-12" value={(fData.summary && fData.summary.mgrNote) || ''} onChange={e=>chg('form1.summary.mgrNote',e.target.value)}></textarea>
+                                            </td>
+                                            <td colSpan="2" className="text-left align-top px-2 pb-1 font-normal">
+                                                <div className="flex items-center gap-4 border-b pb-1 mb-1 font-bold">
+                                                    <span>覆核結果:</span>
+                                                    <label className="checkbox-group"><input type="checkbox" checked={fData.summary?.dirRes==='good'} onChange={()=>chg('form1.summary.dirRes', fData.summary?.dirRes === 'good' ? '' : 'good')}/> 良好</label>
+                                                    <label className="checkbox-group"><input type="checkbox" checked={fData.summary?.dirRes==='bad'} onChange={()=>chg('form1.summary.dirRes', fData.summary?.dirRes === 'bad' ? '' : 'bad')}/> 需加強</label>
+                                                </div>
+                                                改善建議:<br/><textarea className="w-full border-none bg-transparent outline-none text-[10px] resize-none h-12" value={(fData.summary && fData.summary.dirNote) || ''} onChange={e=>chg('form1.summary.dirNote',e.target.value)}></textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>30天留任</td><td><input type="number" className="w-8 border-b border-gray-400 outline-none text-center font-bold" value={(fData.summary && fData.summary.r30) || ''} onChange={e=>chg('form1.summary.r30',e.target.value)}/> 人</td>
+                                            <td rowSpan="3" colSpan="2" className="text-left align-top px-2 py-1 leading-relaxed font-normal">
+                                                1、<input type="text" className="border-b border-gray-400 bg-transparent w-[90%] outline-none mb-1" value={(fData.summary && fData.summary.mgrN1) || ''} onChange={e=>chg('form1.summary.mgrN1',e.target.value)}/><br/>
+                                                2、<input type="text" className="border-b border-gray-400 bg-transparent w-[90%] outline-none mb-1" value={(fData.summary && fData.summary.mgrN2) || ''} onChange={e=>chg('form1.summary.mgrN2',e.target.value)}/><br/>
+                                                3、<input type="text" className="border-b border-gray-400 bg-transparent w-[90%] outline-none" value={(fData.summary && fData.summary.mgrN3) || ''} onChange={e=>chg('form1.summary.mgrN3',e.target.value)}/>
+                                            </td>
+                                            <td rowSpan="3" colSpan="2" className="text-left align-top px-2 py-1 leading-relaxed font-normal">
+                                                1、<input type="text" className="border-b border-gray-400 bg-transparent w-[90%] outline-none mb-1" value={(fData.summary && fData.summary.dirN1) || ''} onChange={e=>chg('form1.summary.dirN1',e.target.value)}/><br/>
+                                                2、<input type="text" className="border-b border-gray-400 bg-transparent w-[90%] outline-none mb-1" value={(fData.summary && fData.summary.dirN2) || ''} onChange={e=>chg('form1.summary.dirN2',e.target.value)}/><br/>
+                                                3、<input type="text" className="border-b border-gray-400 bg-transparent w-[90%] outline-none" value={(fData.summary && fData.summary.dirN3) || ''} onChange={e=>chg('form1.summary.dirN3',e.target.value)}/>
+                                            </td>
+                                        </tr>
+                                        <tr><td>60天留任</td><td><input type="number" className="w-8 border-b border-gray-400 outline-none text-center font-bold" value={(fData.summary && fData.summary.r60) || ''} onChange={e=>chg('form1.summary.r60',e.target.value)}/> 人</td></tr>
+                                        <tr><td>90天留任</td><td><input type="number" className="w-8 border-b border-gray-400 outline-none text-center font-bold" value={(fData.summary && fData.summary.r90) || ''} onChange={e=>chg('form1.summary.r90',e.target.value)}/> 人</td></tr>
+                                        <tr>
+                                            <td>整體留任率</td><td><input type="number" className="w-8 border-b border-gray-400 outline-none text-center font-bold" value={(fData.summary && fData.summary.rate) || ''} onChange={e=>chg('form1.summary.rate',e.target.value)}/> %</td>
+                                            <td colSpan="2" className="text-left px-2 py-3 flex items-end gap-2 border-none">
+                                                <span className="shrink-0 flex items-center">店長簽核: <input type="checkbox" className="scale-125 ml-2" checked={fData.summary?.mgrSignDone || false} onChange={e=>chg('form1.summary.mgrSignDone', e.target.checked)}/></span>
+                                                <div className="flex-1"></div>
+                                                <span className="shrink-0">日期: <input type="date" className="border-b border-gray-400 outline-none text-center bg-transparent" value={(fData.summary && fData.summary.mgrDate) || ''} onChange={e=>chg('form1.summary.mgrDate', e.target.value)}/></span>
+                                            </td>
+                                            <td colSpan="2" className="text-left px-2 py-3 flex items-end gap-2 border-none">
+                                                <span className="shrink-0 flex items-center">總監簽核: <input type="checkbox" className="scale-125 ml-2" checked={fData.summary?.dirSignDone || false} onChange={e=>chg('form1.summary.dirSignDone', e.target.checked)}/></span>
+                                                <div className="flex-1"></div>
+                                                <span className="shrink-0">日期: <input type="date" className="border-b border-gray-400 outline-none text-center bg-transparent" value={(fData.summary && fData.summary.dirDate) || ''} onChange={e=>chg('form1.summary.dirDate', e.target.value)}/></span>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <div className="text-[10px] text-gray-800 font-bold mt-2 text-center">★ 註：本表每月5日前完成填寫，總監每月至少巡店覆核1次，並追蹤改善進度，確保領航員制度有效執行。</div>
+                                <div className="text-right text-gray-400 text-[9px] mt-1 pr-2">HR-2026-07-15</div>
+                            </div>
                         </div>
+                    );
+                };
+
+                const renderHrForm2 = (emp) => {
+                    const fData = emp.form2 || { phase1:{}, phase2:{}, phase3:{}, phase4:{}, eval:{} };
+                    const chg = (path, val) => handleHrFieldChange(emp.id, 'form2', path, val);
+                    const renderCbx = (path, val, label) => {
+                        const keys = path.split('.');
+                        const currentVal = fData[keys[0]] && fData[keys[0]][keys[1]];
+                        return <label className="checkbox-group mr-6 font-normal"><input type="checkbox" checked={currentVal===val} onChange={()=>chg(`form2.${path}`, currentVal === val ? '' : val)} className="scale-100"/>{label}</label>
+                    };
+
+                    return (
+                        <div className="hr-form-container text-gray-800 font-bold">
+                            <div className="flex items-center justify-center py-6 border-b-2 border-blue-900 mx-4 mb-4 gap-3 relative">
+                                <i className="fa-solid fa-people-arrows text-[#1e3a8a] text-4xl"></i>
+                                <h2 className="text-3xl font-black text-[#1e3a8a] tracking-[0.1em]">新人關懷追蹤紀錄表</h2>
+                            </div>
+                            <div className="px-6 text-[11px]">
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-4 mb-6">
+                                    <div className="flex items-end">店別：<input type="text" className="border-b border-gray-400 outline-none flex-1 ml-2 font-bold text-center" value={fData.store || emp.storeName || ''} onChange={e=>chg('form2.store',e.target.value)}/></div>
+                                    <div className="flex items-end">新人姓名：<span className="border-b border-gray-400 flex-1 ml-2 font-bold text-blue-800 text-center">{emp.name}</span></div>
+                                    <div className="flex items-end">到職日期：<input type="date" className="border-b border-gray-400 outline-none flex-1 ml-2 text-center" value={fData.joinDate||''} onChange={e=>chg('form2.joinDate',e.target.value)}/></div>
+                                    <div className="flex items-end">職務：<input type="text" className="border-b border-gray-400 outline-none flex-1 ml-2 font-bold text-center" value={fData.job||'領航員'} onChange={e=>chg('form2.job',e.target.value)}/></div>
+                                    <div className="flex items-end">領航員：<input type="text" className="border-b border-gray-400 outline-none flex-1 ml-2 font-bold text-center" value={fData.pilot||''} onChange={e=>chg('form2.pilot',e.target.value)}/></div>
+                                    <div className="flex items-end">店長：<input type="text" className="border-b border-gray-400 outline-none flex-1 ml-2 font-bold text-center" value={fData.manager||''} onChange={e=>chg('form2.manager',e.target.value)}/></div>
+                                </div>
+
+                                <div className="mb-5">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="bg-[#1e40af] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center tracking-wider"><span className="bg-white text-[#1e40af] rounded-full w-4 h-4 flex items-center justify-center mr-2">1</span> 第一階段 | 到職第1天關懷</div>
+                                        <div className="flex items-end">訪談日期: <input type="date" className="border-b border-gray-400 bg-transparent outline-none text-xs ml-2 text-center w-28" value={(fData.phase1 && fData.phase1.date) || ''} onChange={e=>chg('form2.phase1.date',e.target.value)}/></div>
+                                    </div>
+                                    <div className="space-y-3 pl-4 border-l-2 border-blue-100 ml-2 py-1">
+                                        <div className="flex items-center"><i className="fa-solid fa-building text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">是否了解公司環境？</span> <div className="flex">{renderCbx('phase1.env','A','非常了解')}{renderCbx('phase1.env','B','大致了解')}{renderCbx('phase1.env','C','尚未了解')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-clipboard-list text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">是否了解工作內容？</span> <div className="flex">{renderCbx('phase1.job','A','非常了解')}{renderCbx('phase1.job','B','大致了解')}{renderCbx('phase1.job','C','尚未了解')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-location-dot text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">今天最不適應的地方？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase1 && fData.phase1.q1) || ''} onChange={e=>chg('form2.phase1.q1',e.target.value)}/></div>
+                                        <div className="flex items-center"><i className="fa-regular fa-face-smile text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">今天最開心的事情？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase1 && fData.phase1.q2) || ''} onChange={e=>chg('form2.phase1.q2',e.target.value)}/></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-user text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">需要主管協助事項？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase1 && fData.phase1.q3) || ''} onChange={e=>chg('form2.phase1.q3',e.target.value)}/></div>
+                                    </div>
+                                </div>
+
+                                <div className="mb-5">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="bg-[#1e40af] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center tracking-wider"><span className="bg-white text-[#1e40af] rounded-full w-4 h-4 flex items-center justify-center mr-2">2</span> 第二階段 | 到職第7天關懷</div>
+                                        <div className="flex items-end">訪談日期: <input type="date" className="border-b bg-transparent outline-none text-xs ml-2 text-center w-28" value={(fData.phase2 && fData.phase2.date) || ''} onChange={e=>chg('form2.phase2.date',e.target.value)}/></div>
+                                    </div>
+                                    <div className="space-y-3 pl-4 border-l-2 border-blue-100 ml-2 py-1">
+                                        <div className="flex items-center"><i className="fa-solid fa-user-group text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">是否已認識同仁？</span> <div className="flex">{renderCbx('phase2.colleague','Y','是')}{renderCbx('phase2.colleague','N','否')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-users text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">是否能融入團隊？</span> <div className="flex">{renderCbx('phase2.team','A','很好')}{renderCbx('phase2.team','B','普通')}{renderCbx('phase2.team','C','困難')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-chart-simple text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">工作上最大的困難？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase2 && fData.phase2.q1) || ''} onChange={e=>chg('form2.phase2.q1',e.target.value)}/></div>
+                                        <div className="flex items-center"><i className="fa-regular fa-comment text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">是否有想放棄的念頭？</span> <div className="flex">{renderCbx('phase2.giveup','A','無')}{renderCbx('phase2.giveup','B','偶爾')}{renderCbx('phase2.giveup','C','經常')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-hands-holding text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">如果有困難,希望如何協助？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase2 && fData.phase2.q2) || ''} onChange={e=>chg('form2.phase2.q2',e.target.value)}/></div>
+                                    </div>
+                                </div>
+
+                                <div className="mb-5">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="bg-[#1e40af] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center tracking-wider"><span className="bg-white text-[#1e40af] rounded-full w-4 h-4 flex items-center justify-center mr-2">3</span> 第三階段 | 到職第15天關懷</div>
+                                        <div className="flex items-end">訪談日期: <input type="date" className="border-b bg-transparent outline-none text-xs ml-2 text-center w-28" value={(fData.phase3 && fData.phase3.date) || ''} onChange={e=>chg('form2.phase3.date',e.target.value)}/></div>
+                                    </div>
+                                    <div className="space-y-3 pl-4 border-l-2 border-blue-100 ml-2 py-1">
+                                        <div className="flex items-center"><i className="fa-solid fa-thumbs-up text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">對目前工作是否有信心？</span> <div className="flex">{renderCbx('phase3.conf','A','非常有信心')}{renderCbx('phase3.conf','B','普通')}{renderCbx('phase3.conf','C','沒信心')}</div></div>
+                                        <div className="flex items-center"><i className="fa-regular fa-heart text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">對主管關懷是否滿意？</span> <div className="flex">{renderCbx('phase3.mgr','A','滿意')}{renderCbx('phase3.mgr','B','普通')}{renderCbx('phase3.mgr','C','不滿意')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-handshake-angle text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">對同事相處是否滿意？</span> <div className="flex">{renderCbx('phase3.col','A','滿意')}{renderCbx('phase3.col','B','普通')}{renderCbx('phase3.col','C','不滿意')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-briefcase text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">是否會考慮離職？</span> <div className="flex">{renderCbx('phase3.quit','A','沒有')}{renderCbx('phase3.quit','B','偶爾')}{renderCbx('phase3.quit','C','有')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-triangle-exclamation text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">若有離職念頭，主要原因？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase3 && fData.phase3.q1) || ''} onChange={e=>chg('form2.phase3.q1',e.target.value)}/></div>
+                                    </div>
+                                </div>
+
+                                <div className="mb-6">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <div className="bg-[#1e40af] text-white px-3 py-1 rounded-full text-xs font-bold flex items-center tracking-wider"><span className="bg-white text-[#1e40af] rounded-full w-4 h-4 flex items-center justify-center mr-2">4</span> 第四階段 | 到職第30天關懷</div>
+                                        <div className="flex items-end">訪談日期: <input type="date" className="border-b bg-transparent outline-none text-xs ml-2 text-center w-28" value={(fData.phase4 && fData.phase4.date) || ''} onChange={e=>chg('form2.phase4.date',e.target.value)}/></div>
+                                    </div>
+                                    <div className="space-y-3 pl-4 border-l-2 border-blue-100 ml-2 py-1">
+                                        <div className="flex items-center"><i className="fa-solid fa-bullseye text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">工作適應程度</span> <div className="flex">{renderCbx('phase4.adapt','A','非常適應')}{renderCbx('phase4.adapt','B','普通')}{renderCbx('phase4.adapt','C','不適應')}</div></div>
+                                        <div className="flex items-center"><i className="fa-regular fa-face-smile-beam text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">對公司滿意度</span> <div className="flex">{renderCbx('phase4.satis','A','非常滿意')}{renderCbx('phase4.satis','B','滿意')}{renderCbx('phase4.satis','C','普通')}{renderCbx('phase4.satis','D','不滿意')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-plant-wilt text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">未來是否願意持續留任？</span> <div className="flex">{renderCbx('phase4.stay','A','願意')}{renderCbx('phase4.stay','B','觀察中')}{renderCbx('phase4.stay','C','不願意')}</div></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-calendar-check text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">未來三個月最需要協助事項？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase4 && fData.phase4.q1) || ''} onChange={e=>chg('form2.phase4.q1',e.target.value)}/></div>
+                                        <div className="flex items-center"><i className="fa-solid fa-bullhorn text-blue-500 w-6 text-center text-sm"></i> <span className="w-40">對公司建議事項？</span> <input type="text" className="border-b border-gray-300 outline-none flex-1 font-normal" value={(fData.phase4 && fData.phase4.q2) || ''} onChange={e=>chg('form2.phase4.q2',e.target.value)}/></div>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col md:flex-row gap-6 mb-4 items-stretch">
+                                    <div className="flex-1 bg-[#eef2ff] border border-blue-200 rounded p-3">
+                                        <div className="text-center font-bold text-[#1e3a8a] mb-2">店長綜合評語</div>
+                                        <table className="w-full text-center hr-table bg-white">
+                                            <thead><tr className="bg-blue-50 text-blue-900"><th></th><th className="py-2">上班<br/>精神</th><th className="py-2">學習<br/>意願</th><th className="py-2">團隊<br/>互動</th><th className="py-2">出勤<br/>狀況</th><th className="py-2">情緒<br/>穩定</th><th className="py-2">抱怨<br/>頻率</th></tr></thead>
+                                            <tbody>
+                                                {['正常', '注意', '危險'].map((level) => (
+                                                    <tr key={level}>
+                                                        <td className="font-bold py-1 bg-gray-50">{level}</td>
+                                                        {['s1','s2','s3','s4','s5','s6'].map((col) => (
+                                                            <td key={col}><input type="checkbox" checked={fData.eval && fData.eval[col]===level} onChange={()=>chg(`form2.eval.${col}`, fData.eval?.[col] === level ? '' : level)} className="scale-100" /></td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="w-full md:w-72 border rounded p-4 flex flex-col justify-center bg-white shadow-sm gap-4">
+                                        <div className="flex items-end justify-between">
+                                            <div className="font-bold text-gray-700 w-24 flex items-center"><i className="fa-solid fa-pen text-[#1e40af] mr-2"></i>新人簽名:</div>
+                                            <div className="flex-1 border-b border-gray-400 h-10">{renderSignBox('', 'form2.empSign', emp, "border-none !min-h-0")}</div>
+                                        </div>
+                                        <div className="flex items-end justify-between">
+                                            <div className="font-bold text-gray-700 w-24 flex items-center"><i className="fa-solid fa-user-tie text-[#1e40af] mr-2"></i>店長簽名:</div>
+                                            <div className="flex-1 border-b border-gray-400 h-10">{renderSignBox('', 'form2.mgrSign', emp, "border-none !min-h-0")}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-[10px] text-gray-600 font-bold text-center bg-[#eef2ff] p-2 rounded">★ 備註：本表作為新人關懷追蹤紀錄，請妥善保存並持續追蹤，協助新人順利適應與成長。</div>
+                                <div className="text-right text-gray-400 text-[9px] mt-1 pr-2">HR-2026-07-15</div>
+                            </div>
+                        </div>
+                    );
+                };
+
+                const renderHrForm3 = (emp) => {
+                    const fData = emp.form3 || { basic:{}, interview:{}, fact:'', emp:'', guide:{}, improve:[{},{},{}], track:{}, concl:{} };
+                    const chg = (path, val) => handleHrFieldChange(emp.id, 'form3', path, val);
+
+                    // 確保綁定 form3 的深層資料並支援取消
+                    const ckbx = (path, val) => {
+                        const keys = path.split('.');
+                        const current = fData[keys[0]] && fData[keys[0]][val];
+                        return <input type="checkbox" checked={!!current} onChange={(e) => chg(`form3.${path}.${val}`, e.target.checked)} className="scale-125 mr-2" />;
+                    };
+
+                    return (
+                        <div className="hr-form-container text-gray-800 relative">
+                            <div className="flex items-center justify-center py-5 border-b-2 border-emerald-700 mx-4 mb-4 gap-4">
+                                <span className="text-emerald-700 opacity-50 tracking-[0.2em] font-black italic">--</span>
+                                <h2 className="text-2xl font-black text-slate-800 tracking-[0.1em]">員工關懷暨績效改善面談紀錄表</h2>
+                                <span className="text-emerald-700 opacity-50 tracking-[0.2em] font-black italic">--</span>
+                            </div>
+                            <div className="px-6 text-xs space-y-3 pb-6">
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">一、基本資料</div>
+                                    <table className="w-full hr-table text-left border-2 border-emerald-700">
+                                        <tbody>
+                                            <tr>
+                                                <th className="w-24 bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-user mr-1"></i> 姓名</th>
+                                                <td className="w-32 font-bold text-blue-700 px-2 border-emerald-700 text-center">{emp.name}</td>
+                                                <th className="w-24 bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-id-card mr-1"></i> 員工編號</th>
+                                                <td className="w-32 font-bold text-center border-emerald-700">{emp.id}</td>
+                                                <th className="w-24 bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-building mr-1"></i> 部門/店別</th>
+                                                <td className="border-emerald-700"><input type="text" className="w-full bg-transparent px-1 outline-none text-center" value={(fData.basic && fData.basic.dept) || emp.storeName || ''} onChange={e=>chg('form3.basic.dept',e.target.value)}/></td>
+                                            </tr>
+                                            <tr>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-briefcase mr-1"></i> 職務</th>
+                                                <td className="border-emerald-700"><input type="text" className="w-full bg-transparent px-1 outline-none text-center" value={(fData.basic && fData.basic.job) || ''} onChange={e=>chg('form3.basic.job',e.target.value)}/></td>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-calendar-day mr-1"></i> 到職日</th>
+                                                <td className="border-emerald-700"><input type="date" className="w-full bg-transparent px-1 outline-none text-center" value={(fData.basic && fData.basic.joinDate) || ''} onChange={e=>chg('form3.basic.joinDate',e.target.value)}/></td>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-user-tie mr-1"></i> 直屬主管</th>
+                                                <td className="border-emerald-700"><input type="text" className="w-full bg-transparent px-1 outline-none text-center" value={(fData.basic && fData.basic.mgr) || ''} onChange={e=>chg('form3.basic.mgr',e.target.value)}/></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">二、面談內容</div>
+                                    <table className="w-full hr-table text-left border-2 border-emerald-700">
+                                        <tbody>
+                                            <tr>
+                                                <th className="w-[15%] bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-calendar-days mr-1"></i> 面談日期</th><td className="w-[35%] border-emerald-700"><input type="date" className="w-full outline-none px-2 text-center bg-transparent" value={(fData.interview && fData.interview.date) || ''} onChange={e=>chg('form3.interview.date',e.target.value)}/></td>
+                                                <th className="w-[15%] bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-location-dot mr-1"></i> 面談地點</th><td className="w-[35%] border-emerald-700"><input type="text" className="w-full outline-none px-2 bg-transparent" value={(fData.interview && fData.interview.loc) || ''} onChange={e=>chg('form3.interview.loc',e.target.value)}/></td>
+                                            </tr>
+                                            <tr>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-comments mr-1"></i> 面談類型<br/><span className="text-[9px] font-normal text-gray-500">(可複選)</span></th>
+                                                <td colSpan="3" className="text-left p-3 border-emerald-700">
+                                                    <div className="flex flex-wrap gap-x-6 gap-y-3 font-bold text-gray-800">
+                                                        <label className="checkbox-group">{ckbx('interview', 'type1')} 關懷面談</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'type2')} 績效改善</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'type3')} 客訴事件</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'type4')} 出勤異常</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'type5')} 工作態度</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'type6')} 其他 <input type="text" className="border-b border-gray-400 w-32 outline-none ml-1 bg-transparent font-normal text-blue-700" value={(fData.interview && fData.interview.typeOther) || ''} onChange={e=>chg('form3.interview.typeOther',e.target.value)}/></label>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-clipboard-list mr-1"></i> 面談原因<br/><span className="text-[9px] font-normal text-gray-500">(可複選)</span></th>
+                                                <td colSpan="3" className="text-left p-3 border-emerald-700">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 font-bold text-gray-800 pl-2">
+                                                        <label className="checkbox-group">{ckbx('interview', 'r1')} 工作績效未達標準</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r2')} 團隊合作問題</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r3')} 顧客反應或客訴事件</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r4')} 情緒管理問題</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r5')} 出勤異常 (遲到、請假)</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r6')} 違反公司規範</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r7')} 工作態度需改善</label>
+                                                        <label className="checkbox-group">{ckbx('interview', 'r8')} 主動關懷面談</label>
+                                                        <label className="checkbox-group col-span-1 sm:col-span-2">{ckbx('interview', 'r9')} 其他：<input type="text" className="border-b border-gray-400 flex-1 outline-none ml-1 font-normal bg-transparent text-blue-700" value={(fData.interview && fData.interview.rOther) || ''} onChange={e=>chg('form3.interview.rOther',e.target.value)}/></label>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-pen-to-square mr-1"></i> 具體事實說明</th>
+                                                <td colSpan="3" className="border-emerald-700 p-0"><textarea className="w-full h-16 outline-none p-2 resize-none text-left align-top bg-transparent text-blue-800 font-bold" value={fData.fact||''} onChange={e=>chg('form3.fact',e.target.value)}></textarea></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">三、員工說明</div>
+                                    <div className="border-2 border-emerald-700 rounded-sm">
+                                        <div className="text-xs text-gray-700 bg-emerald-50 px-2 py-1 font-bold border-b border-emerald-700">請員工說明事件經過及個人想法：</div>
+                                        <textarea className="w-full h-20 outline-none p-2 resize-none text-left bg-transparent text-blue-800 font-bold" value={fData.emp||''} onChange={e=>chg('form3.emp',e.target.value)}></textarea>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">四、主管輔導內容</div>
+                                    <table className="w-full hr-table text-left border-2 border-emerald-700">
+                                        <tbody>
+                                            <tr>
+                                                <th className="w-1/5 bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-list-check mr-1"></i> 面談溝通重點<br/><span className="text-[9px] font-normal text-gray-500">(可複選)</span></th>
+                                                <td className="w-4/5 text-left p-3 border-emerald-700">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 font-bold text-gray-800 pl-2">
+                                                        <label className="checkbox-group">{ckbx('guide', 'g1')} 工作標準說明</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g2')} 情緒管理建議</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g3')} 顧客服務要求</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g4')} 教育訓練安排</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g5')} 團隊合作要求</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g6')} 公司制度說明</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g7')} 出勤管理提醒</label>
+                                                        <label className="checkbox-group">{ckbx('guide', 'g8')} 其他：<input type="text" className="border-b border-gray-400 flex-1 outline-none ml-1 font-normal bg-transparent text-blue-700" value={(fData.guide && fData.guide.gOther) || ''} onChange={e=>chg('form3.guide.gOther',e.target.value)}/></label>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th className="bg-emerald-50 text-emerald-800 border-emerald-700"><i className="fa-solid fa-comment-dots mr-1"></i> 主管輔導內容</th>
+                                                <td className="border-emerald-700 p-0"><textarea className="w-full h-20 outline-none p-2 resize-none text-left bg-transparent text-blue-800 font-bold" value={(fData.guide && fData.guide.content) || ''} onChange={e=>chg('form3.guide.content',e.target.value)}></textarea></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">五、改善計畫</div>
+                                    <table className="w-full hr-table border-2 border-emerald-700">
+                                        <thead><tr className="bg-emerald-50 text-emerald-800 border-emerald-700">
+                                            <th className="border-emerald-700 w-[10%] font-bold">No</th>
+                                            <th className="border-emerald-700 w-[30%] font-bold">改善項目</th>
+                                            <th className="border-emerald-700 w-[40%] font-bold">改善目標</th>
+                                            <th className="border-emerald-700 w-[20%] font-bold">完成期限</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            {[0,1,2].map(idx => (
+                                                <tr key={`imp_${idx}`}>
+                                                    <td className="border-emerald-700 font-bold bg-gray-50">{idx+1}</td>
+                                                    <td className="border-emerald-700 p-0 h-8"><input type="text" className="w-full h-full outline-none px-2 text-left bg-transparent text-blue-800 font-bold" value={(fData.improve && fData.improve[idx] && fData.improve[idx].item) || ''} onChange={e=>chg(`form3.improve.${idx}.item`,e.target.value)}/></td>
+                                                    <td className="border-emerald-700 p-0"><input type="text" className="w-full h-full outline-none px-2 text-left bg-transparent text-blue-800 font-bold" value={(fData.improve && fData.improve[idx] && fData.improve[idx].goal) || ''} onChange={e=>chg(`form3.improve.${idx}.goal`,e.target.value)}/></td>
+                                                    <td className="border-emerald-700 p-0"><input type="date" className="w-full h-full outline-none px-2 text-center bg-transparent text-blue-800 font-bold" value={(fData.improve && fData.improve[idx] && fData.improve[idx].deadline) || ''} onChange={e=>chg(`form3.improve.${idx}.deadline`,e.target.value)}/></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">六、追蹤評估</div>
+                                    <table className="w-full hr-table text-left border-2 border-emerald-700">
+                                        <tbody>
+                                            <tr>
+                                                <th className="w-1/6 bg-emerald-50 text-emerald-800 text-center border-emerald-700">改善期間</th>
+                                                <td className="w-5/6 flex items-center justify-center gap-4 px-2 py-1 font-bold border-none text-blue-800">
+                                                    自 <input type="date" className="border-b border-gray-400 outline-none text-xs text-center font-normal bg-transparent" value={(fData.track && fData.track.start) || ''} onChange={e=>chg('form3.track.start',e.target.value)}/>
+                                                    至 <input type="date" className="border-b border-gray-400 outline-none text-xs text-center font-normal bg-transparent" value={(fData.track && fData.track.end) || ''} onChange={e=>chg('form3.track.end',e.target.value)}/>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <th className="bg-emerald-50 text-emerald-800 text-center border-emerald-700">追蹤方式 <br/><span className="text-[9px] font-normal text-gray-500">(可複選)</span></th>
+                                                <td className="flex justify-around p-3 border-emerald-700 font-bold text-gray-800">
+                                                    <label className="checkbox-group">{ckbx('track', 't1')} 主任追蹤</label>
+                                                    <label className="checkbox-group">{ckbx('track', 't2')} 店長追蹤</label>
+                                                    <label className="checkbox-group">{ckbx('track', 't3')} 總監追蹤</label>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700">七、面談結論</div>
+                                    <div className="border-2 border-emerald-700 p-4 grid grid-cols-1 sm:grid-cols-3 gap-y-4 font-bold text-gray-800 pl-6">
+                                        <label className="checkbox-group">{ckbx('concl', 'c1')} 已了解並願意改善</label>
+                                        <label className="checkbox-group">{ckbx('concl', 'c2')} 持續觀察追蹤</label>
+                                        <label className="checkbox-group">{ckbx('concl', 'c3')} 安排教育訓練</label>
+                                        <label className="checkbox-group">{ckbx('concl', 'c4')} 調整工作內容</label>
+                                        <label className="checkbox-group">{ckbx('concl', 'c5')} 調整排班</label>
+                                        <label className="checkbox-group">{ckbx('concl', 'c6')} 再次面談</label>
+                                        <label className="checkbox-group col-span-1 sm:col-span-3">{ckbx('concl', 'c7')} 其他處理方式：<input type="text" className="border-b border-gray-400 flex-1 outline-none ml-2 font-normal bg-transparent text-blue-700" value={(fData.concl && fData.concl.cOther) || ''} onChange={e=>chg('form3.concl.cOther',e.target.value)}/></label>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="form-section-title bg-emerald-700 mb-1">八、雙方確認</div>
+                                    <div className="border-2 border-emerald-700 p-2 bg-emerald-50/30">
+                                        <div className="text-[10px] text-gray-700 mb-6 font-bold px-2">本人已了解本次面談內容及改善方向，並願意配合後續改善計畫。</div>
+                                        <div className="flex justify-between items-end mb-2 gap-4 px-4 font-bold text-gray-700">
+                                            <div className="flex-1 flex flex-col items-center">
+                                                <div className="border-b border-gray-400 w-full mb-1 h-12 relative">
+                                                    <div className="absolute inset-0 flex items-end justify-center">{renderSignBox('', 'form3.sign.emp', emp, "border-none !min-h-0")}</div>
+                                                </div>
+                                                <span>員工簽名</span>
+                                            </div>
+                                            <div className="flex-1 flex flex-col items-center">
+                                                <div className="border-b border-gray-400 w-full mb-1 h-12 relative">
+                                                    <div className="absolute inset-0 flex items-end justify-center">{renderSignBox('', 'form3.sign.mgr', emp, "border-none !min-h-0")}</div>
+                                                </div>
+                                                <span>主管簽名</span>
+                                            </div>
+                                            <div className="flex-1 flex flex-col items-center">
+                                                <div className="border-b border-gray-400 w-full mb-1 h-12 relative">
+                                                    <div className="absolute inset-0 flex items-end justify-center">{renderSignBox('', 'form3.sign.storeMgr', emp, "border-none !min-h-0")}</div>
+                                                </div>
+                                                <span>店長簽名</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-left text-xs font-bold text-gray-700 pl-4 mt-4 mb-2">日期: <input type="date" className="border-b border-gray-400 bg-transparent outline-none font-normal text-blue-800" value={(fData.sign && fData.sign.date) || ''} onChange={e=>chg('form3.sign.date',e.target.value)}/></div>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-between items-center mt-2">
+                                    <div className="text-[10px] text-emerald-800 font-bold bg-emerald-100 py-1 px-4 rounded-full flex items-center">
+                                        <i className="fa-regular fa-bell text-lg mr-2"></i> 備註：本表僅作為面談紀錄及改善依據，將作為後續追蹤與評估之參考，並依公司相關規定辦理。
+                                    </div>
+                                    <div className="text-right text-gray-400 text-[9px] pr-2 font-bold">HR-2026-07-15</div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                };
+
+                return (
+                    <div className="flex flex-col h-full bg-gray-50 overflow-hidden relative">
+                        <div className="bg-white border-b px-4 py-2 flex flex-col md:flex-row justify-between items-center shrink-0 shadow-sm hide-in-fullscreen relative z-20 gap-2">
+                            <div className="flex items-center gap-4 w-full md:w-auto">
+                                <h2 className="text-blue-800 font-bold flex items-center whitespace-nowrap">
+                                    <i className="fa-solid fa-user-shield mr-2"></i>人事系統
+                                </h2>
+                                
+                                <div className="flex items-center gap-2">
+                                    <select 
+                                        className="border rounded px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold bg-blue-50 text-blue-800"
+                                        value={selectedStore}
+                                        onChange={(e) => {
+                                            setSelectedStore(e.target.value);
+                                            setSelectedEmpId(''); 
+                                        }}
+                                    >
+                                        <option value="">-- 選擇店別 --</option>
+                                        {availableStores.map(store => (
+                                            <option key={store} value={store}>{store}</option>
+                                        ))}
+                                    </select>
+
+                                    <select 
+                                        className="border rounded px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                                        value={selectedEmpId}
+                                        onChange={(e) => setSelectedEmpId(e.target.value)}
+                                        disabled={!selectedStore}
+                                    >
+                                        <option value="">-- 選擇員工 --</option>
+                                        {empsInStore.map(emp => (
+                                            <option key={emp.id} value={emp.id}>{emp.id} - {emp.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2 w-full md:w-auto justify-end">
+                                {currentEmp && (
+                                    <>
+                                        <button onClick={() => {
+                                            setEditEmpData({ id: currentEmp.id, name: currentEmp.name, storeName: currentEmp.storeName });
+                                            setIsEditMode(true);
+                                            setShowEmpModal(true);
+                                        }} className="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700 transition">
+                                            <i className="fa-solid fa-pen mr-1"></i>編輯
+                                        </button>
+                                        <button onClick={handleDeleteHrEmployee} className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition">
+                                            <i className="fa-solid fa-trash-can mr-1"></i>刪除
+                                        </button>
+                                    </>
+                                )}
+                                <button onClick={() => {
+                                    setEditEmpData({ id: '', name: '', storeName: selectedStore || '' });
+                                    setIsEditMode(false);
+                                    setShowEmpModal(true);
+                                }} className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition whitespace-nowrap">
+                                    <i className="fa-solid fa-plus mr-1"></i>新增員工
+                                </button>
+                            </div>
+                        </div>
+
+                        {currentEmp ? (
+                            <div className="flex-1 flex flex-col overflow-hidden">
+                                <div className="flex bg-white border-b shrink-0 overflow-x-auto hide-scroll hide-in-fullscreen relative z-20">
+                                    <button onClick={() => setHrFormTab('form1')} className={`px-4 py-2 text-sm font-bold whitespace-nowrap ${hrFormTab === 'form1' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}>領航員輔導紀錄表</button>
+                                    <button onClick={() => setHrFormTab('form2')} className={`px-4 py-2 text-sm font-bold whitespace-nowrap ${hrFormTab === 'form2' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}>新人培育領航計畫</button>
+                                    <button onClick={() => setHrFormTab('form3')} className={`px-4 py-2 text-sm font-bold whitespace-nowrap ${hrFormTab === 'form3' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}>績效改善面談表</button>
+                                    
+                                    <div className="ml-auto flex items-center pr-2">
+                                        <button onClick={() => setFullScreenMode(true)} className="bg-gray-800 text-white px-3 py-1.5 rounded text-xs shadow hover:bg-gray-700 transition font-bold">
+                                            <i className="fa-regular fa-file-pdf mr-1"></i> 整頁截圖模式 (PDF)
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-4 relative z-10 hide-scroll">
+                                    <div className="w-full max-w-4xl mx-auto pb-20">
+                                        {hrFormTab === 'form1' && renderHrForm1(currentEmp)}
+                                        {hrFormTab === 'form2' && renderHrForm2(currentEmp)}
+                                        {hrFormTab === 'form3' && renderHrForm3(currentEmp)}
+                                        
+                                        {fullScreenMode && (
+                                            <div className="text-center mt-6 no-print">
+                                                <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-3 rounded-full shadow-xl font-bold hover:bg-blue-700 text-lg">
+                                                    <i className="fa-solid fa-print mr-2"></i>直接列印 / 另存為 PDF
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-center text-gray-400 flex-col gap-4 hide-in-fullscreen">
+                                <i className="fa-solid fa-users text-6xl opacity-20"></i>
+                                <p className="font-bold">請先選擇「店別」再選擇「員工」，或點擊新增員工開始管理。</p>
+                            </div>
+                        )}
+
+                        {/* 新增/編輯員工 Modal */}
+                        {showEmpModal && (
+                            <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                                    <div className="bg-blue-600 text-white p-4 font-bold flex justify-between">
+                                        <span>{isEditMode ? '編輯員工資料' : '新增系統員工'}</span>
+                                        <button onClick={() => setShowEmpModal(false)}><i className="fa-solid fa-xmark text-xl"></i></button>
+                                    </div>
+                                    <form onSubmit={handleSaveHrEmployee} className="p-6 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 mb-1">所屬店別</label>
+                                            <input required value={editEmpData.storeName} onChange={e => setEditEmpData({...editEmpData, storeName: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" placeholder="例: 中清店" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 mb-1">員工編號</label>
+                                            <input required value={editEmpData.id} onChange={e => setEditEmpData({...editEmpData, id: e.target.value})} disabled={isEditMode} className="w-full border p-2 rounded outline-none focus:border-blue-500 disabled:bg-gray-100" placeholder="例: E001" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 mb-1">員工姓名</label>
+                                            <input required value={editEmpData.name} onChange={e => setEditEmpData({...editEmpData, name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" placeholder="例: 王小明" />
+                                        </div>
+                                        <div className="pt-4 flex justify-end gap-3 border-t">
+                                            <button type="button" onClick={() => setShowEmpModal(false)} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded font-bold transition">取消</button>
+                                            <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow hover:bg-blue-700 transition">確認儲存</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Signature Modal */}
+                        {sigModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
+                                <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col h-[400px]">
+                                    <div className="bg-blue-800 text-white p-4 font-bold flex justify-between items-center">
+                                        <span><i className="fa-solid fa-pen-nib mr-2"></i>電子簽名板</span>
+                                        <button onClick={() => setSigModal({ isOpen: false, fieldPath: '' })} className="text-white/80 hover:text-white"><i className="fa-solid fa-xmark text-xl"></i></button>
+                                    </div>
+                                    <div className="flex-1 bg-gray-50 relative m-4 border-2 border-dashed border-gray-300 rounded-lg overflow-hidden cursor-crosshair">
+                                        <canvas 
+                                            ref={canvasRef}
+                                            onMouseDown={startDrawing}
+                                            onMouseMove={draw}
+                                            onMouseUp={stopDrawing}
+                                            onMouseOut={stopDrawing}
+                                            onTouchStart={startDrawing}
+                                            onTouchMove={draw}
+                                            onTouchEnd={stopDrawing}
+                                            style={{ touchAction: 'none' }} // 強制禁止滑動，確保手機流暢簽名
+                                            className="w-full h-full"
+                                        />
+                                    </div>
+                                    <div className="p-4 border-t bg-gray-50 flex justify-between gap-3">
+                                        <button onClick={clearCanvas} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded font-bold transition border border-gray-300">清除重簽</button>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => setSigModal({ isOpen: false, fieldPath: '' })} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded font-bold transition">取消</button>
+                                            <button onClick={saveSignature} className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow hover:bg-blue-700 transition">確認存檔</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                </div>
-            );
+                );
+            };
 
             return (
-                <div className="flex flex-col h-full max-w-7xl mx-auto bg-gray-100">
-                    <header className="px-4 py-2 border-b bg-white flex justify-between items-center shrink-0 shadow-sm">
-                        <h1 className="text-xl font-black text-gray-800 tracking-tight">中清店12生肖戰報</h1>
+                <div className={`flex flex-col max-w-7xl mx-auto bg-gray-100 relative ${fullScreenMode ? 'pdf-mode' : 'h-full'}`}>
+                    
+                    {/* 結束截圖模式懸浮按鈕 */}
+                    {fullScreenMode && (
+                        <button onClick={() => setFullScreenMode(false)} className="fixed bottom-6 right-6 bg-red-600 text-white px-5 py-3 rounded-full shadow-2xl font-bold z-[100] hover:bg-red-700 border-2 border-white flex items-center no-print">
+                            <i className="fa-solid fa-compress mr-2"></i>結束整頁模式
+                        </button>
+                    )}
+
+                    <header className="px-4 py-2 border-b bg-white flex justify-between items-center shrink-0 shadow-sm relative z-10 hide-in-fullscreen">
+                        <h1 className="text-xl font-black text-gray-800 tracking-tight">
+                            <span className="text-blue-600 mr-1">{loggedInGroup}</span>12生肖戰報
+                        </h1>
+                        <button onClick={() => setShowSuperAuthModal(true)} className="bg-gray-900 text-yellow-500 px-3 py-1 rounded text-xs font-bold shadow hover:bg-gray-800 transition">
+                            <i className="fa-solid fa-key mr-1"></i>權限登入
+                        </button>
                     </header>
 
-                    <nav className="flex overflow-x-auto border-b bg-white shrink-0 hide-scroll text-sm">
-                        <button onClick={() => setActiveTab('night')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'night' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-moon mr-1 text-gray-700"></i>夜班</button>
-                        <button onClick={() => setActiveTab('morning')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'morning' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-sun mr-1 text-orange-500"></i>早班</button>
-                        <button onClick={() => setActiveTab('evening')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'evening' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-cloud-sun mr-1 text-indigo-500"></i>晚班</button>
-                        <button onClick={() => setActiveTab('summary')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'summary' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-layer-group mr-1 text-green-600"></i>三班累加</button>
-                        <button onClick={() => setActiveTab('audit')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'audit' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-clipboard-check mr-1 text-red-600"></i>稽核</button>
-                        <button onClick={() => setActiveTab('trend')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'trend' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-chart-line mr-1 text-purple-600"></i>趨勢圖表</button>
-                        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'settings' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-gear mr-1 text-gray-500"></i>店長設定</button>
+                    <nav className="flex overflow-x-auto border-b bg-white shrink-0 hide-scroll text-sm relative z-10 hide-in-fullscreen">
+                        <button onClick={() => switchTab('night')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'night' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-moon mr-1 text-gray-700"></i>夜班</button>
+                        <button onClick={() => switchTab('morning')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'morning' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-sun mr-1 text-orange-500"></i>早班</button>
+                        <button onClick={() => switchTab('evening')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'evening' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-cloud-sun mr-1 text-indigo-500"></i>晚班</button>
+                        <button onClick={() => switchTab('summary')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'summary' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-layer-group mr-1 text-green-600"></i>三班累加</button>
+                        <button onClick={() => switchTab('audit')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'audit' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-clipboard-check mr-1 text-red-600"></i>稽核</button>
+                        <button onClick={() => switchTab('trend')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'trend' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-chart-line mr-1 text-purple-600"></i>趨勢圖表</button>
+                        <button onClick={() => switchTab('settings')} className={`flex-1 py-2 px-3 whitespace-nowrap ${activeTab === 'settings' ? 'tab-active' : 'tab-inactive'}`}><i className="fa-solid fa-gear mr-1 text-gray-500"></i>店長設定</button>
+                        <button onClick={() => setShowPwdModal(true)} className={`flex-1 py-2 px-3 whitespace-nowrap border-l-2 border-blue-200 ${activeTab === 'hr' ? 'tab-active !border-b-blue-600 !text-blue-800' : 'text-blue-600 hover:bg-blue-50'}`}><i className="fa-solid fa-user-shield mr-1"></i>領航員/績效改善</button>
+                        {isSuperAdmin && (
+                            <button onClick={() => switchTab('admin')} className={`flex-1 py-2 px-3 whitespace-nowrap border-l-2 border-red-200 ${activeTab === 'admin' ? 'tab-active !border-b-red-600 !text-red-700 bg-red-50' : 'text-red-500 hover:bg-red-50'}`}><i className="fa-solid fa-crown mr-1"></i>權限管理</button>
+                        )}
                     </nav>
 
-                    <main className="flex-1 overflow-hidden p-2">
-                        {activeTab === 'night' && renderShiftTab('night', '夜班', 'fa-moon', 'text-gray-800', 'bg-gray-800')}
-                        {activeTab === 'morning' && renderShiftTab('morning', '早班', 'fa-sun', 'text-orange-600', 'bg-orange-500')}
-                        {activeTab === 'evening' && renderShiftTab('evening', '晚班', 'fa-cloud-sun', 'text-indigo-600', 'bg-indigo-500')}
-                        {activeTab === 'summary' && renderSummary()}
-                        {activeTab === 'audit' && renderAudit()}
-                        {activeTab === 'trend' && renderTrendTab()}
-                        {activeTab === 'settings' && renderSettings()}
+                    <main className={`flex-1 ${fullScreenMode ? 'print-mode' : 'overflow-hidden'}`}>
+                        {activeTab === 'night' && <div className="p-2 h-full overflow-hidden">{renderShiftTab('night', '夜班', 'fa-moon', 'text-gray-800', 'bg-gray-800')}</div>}
+                        {activeTab === 'morning' && <div className="p-2 h-full overflow-hidden">{renderShiftTab('morning', '早班', 'fa-sun', 'text-orange-600', 'bg-orange-500')}</div>}
+                        {activeTab === 'evening' && <div className="p-2 h-full overflow-hidden">{renderShiftTab('evening', '晚班', 'fa-cloud-sun', 'text-indigo-600', 'bg-indigo-500')}</div>}
+                        {activeTab === 'summary' && <div className="p-2 h-full overflow-hidden">{renderSummary()}</div>}
+                        {activeTab === 'audit' && <div className="p-2 h-full overflow-hidden">{renderAudit()}</div>}
+                        {activeTab === 'trend' && <div className="p-2 h-full overflow-hidden">{renderTrendTab()}</div>}
+                        {activeTab === 'settings' && <div className="p-2 h-full overflow-hidden">{renderSettings()}</div>}
+                        {activeTab === 'hr' && renderHrTab()}
+                        {activeTab === 'admin' && renderAdminTab()}
                     </main>
+
+                    {/* HR 專區密碼驗證對話框 */}
+                    {showPwdModal && (
+                        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+                                <div className="bg-blue-800 text-white p-4 font-bold text-lg flex items-center gap-2">
+                                    <i className="fa-solid fa-lock"></i> 系統安全驗證
+                                </div>
+                                <div className="p-6">
+                                    <p className="text-gray-600 text-sm mb-4 font-bold">請輸入授權密碼以解鎖畫面。</p>
+                                    <input type="password" 
+                                        className="w-full border-2 border-gray-300 rounded-lg p-3 text-center text-2xl tracking-[0.5em] focus:border-blue-500 outline-none transition-colors font-sans" 
+                                        value={pwdInput} 
+                                        onChange={(e) => setPwdInput(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handlePwdSubmit()}
+                                        placeholder="輸入密碼"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="bg-gray-50 p-4 flex justify-end gap-3 border-t">
+                                    <button onClick={() => {setShowPwdModal(false); setPwdInput('');}} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded font-bold transition">取消</button>
+                                    <button onClick={handlePwdSubmit} className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow hover:bg-blue-700 transition">驗證解鎖</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 最高權限登入對話框 */}
+                    {showSuperAuthModal && (
+                        <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden border-2 border-yellow-500">
+                                <div className="bg-gray-900 text-yellow-500 p-4 font-bold text-lg flex items-center gap-2">
+                                    <i className="fa-solid fa-crown"></i> 總部最高權限登入
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">管理員帳號</label>
+                                        <input type="text" className="w-full border-2 border-gray-300 rounded-lg p-2 text-center text-lg font-bold focus:border-yellow-500 outline-none" value={superAccInput} onChange={e => setSuperAccInput(e.target.value)} placeholder="輸入帳號" autoFocus />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">管理員密碼</label>
+                                        <input type="password" className="w-full border-2 border-gray-300 rounded-lg p-2 text-center text-xl tracking-[0.2em] font-sans focus:border-yellow-500 outline-none" value={superPwdInput} onChange={e => setSuperPwdInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSuperAuthSubmit()} placeholder="輸入密碼" />
+                                    </div>
+                                </div>
+                                <div className="bg-gray-50 p-4 flex justify-end gap-3 border-t">
+                                    <button onClick={() => {setShowSuperAuthModal(false); setSuperAccInput(''); setSuperPwdInput('');}} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded font-bold transition">取消</button>
+                                    <button onClick={handleSuperAuthSubmit} className="px-6 py-2 bg-yellow-500 text-gray-900 rounded font-bold shadow hover:bg-yellow-400 transition">驗證登入</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* HR 專區密碼錯誤對話框 */}
+                    {pwdErrorModal && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
+                            <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full transform transition-all border-l-4 border-red-500">
+                                <div className="flex items-center text-red-500 mb-4">
+                                    <i className="fa-solid fa-triangle-exclamation text-3xl mr-2"></i>
+                                    <h3 className="font-bold text-lg">存取失敗</h3>
+                                </div>
+                                <p className="text-gray-600 mb-6 font-bold">密碼錯誤，請重新輸入以驗證您的身份。</p>
+                                <button onClick={() => setPwdErrorModal(false)} className="w-full bg-gray-900 text-white py-2 rounded-lg font-bold hover:bg-gray-700 transition">
+                                    我知道了
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 總部最高權限密碼錯誤對話框 */}
+                    {superAuthErrorModal && (
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[130] p-4">
+                            <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full transform transition-all border-l-4 border-red-600 border-t-2 border-r-2 border-b-2">
+                                <div className="flex items-center text-red-600 mb-4">
+                                    <i className="fa-solid fa-ban text-3xl mr-3"></i>
+                                    <h3 className="font-black text-xl tracking-wider">權限驗證失敗</h3>
+                                </div>
+                                <p className="text-gray-700 mb-6 font-bold leading-relaxed">
+                                    您輸入的最高權限帳號或密碼不正確。<br/>
+                                    <span className="text-sm text-gray-500 font-normal mt-1 block">請重新確認後再試一次。</span>
+                                </p>
+                                <button onClick={() => setSuperAuthErrorModal(false)} className="w-full bg-red-600 text-white py-3 rounded-lg font-bold hover:bg-red-700 transition shadow-md">
+                                    返回重新輸入
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
 
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null, errorInfo: null };
+            }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            componentDidCatch(error, errorInfo) {
+                console.error("Caught unhandled exception:", error, errorInfo);
+                this.setState({ errorInfo });
+            }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div style={{ padding: '20px', fontFamily: 'sans-serif', background: '#fee2e2', color: '#991b1b', height: '100vh', overflow: 'auto' }}>
+                            <h2 style={{ fontWeight: 'bold', fontSize: '20px' }}>系統發生未預期錯誤</h2>
+                            <p>非常抱歉，畫面渲染失敗。請截圖以下代碼交給工程師，這能幫助我們徹底除錯：</p>
+                            <pre style={{ background: '#fff', padding: '10px', marginTop: '10px', border: '1px solid #f87171', borderRadius: '4px', fontSize: '12px', whiteSpace: 'pre-wrap' }}>
+                                {this.state.error && this.state.error.toString()}
+                                {'\n'}
+                                {this.state.errorInfo && this.state.errorInfo.componentStack}
+                            </pre>
+                            <button onClick={() => window.location.reload()} style={{ marginTop: '20px', padding: '10px 20px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                重新載入
+                            </button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
     </script>
 </body>
 </html>
